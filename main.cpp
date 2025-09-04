@@ -24,8 +24,7 @@ void endBuffering(bool display = true) {
 }
 
 int main() {
-    std::cout << "=== TEXAS HOLD'EM POKER - 100 HAND SIMULATION ===" << std::endl;
-    std::cout << "\n=== DISPLAYING HANDS WITH SIDE POTS OR CHOPPED POTS ===" << std::endl;
+    std::cout << "=== TEXAS HOLD'EM POKER - SINGLE HAND ===" << std::endl;
         
     // Create table and game
     Table table;
@@ -39,115 +38,58 @@ int main() {
     
     // Track starting chip amounts for accurate gain/loss calculation
     std::vector<int> startingChips = {1000, 1000, 150, 1000};
-    int displayedHands = 0;
     
-    for (int handNum = 1; handNum <= 100; handNum++) {
-        // Always start buffering to capture output
-        startBuffering();
-        
-        std::cout << "\n=== HAND " << handNum << " ===" << std::endl;
-        
-        // Start the hand
-        game.startNewHand();
-        
-        // Show initial state
-        game.showGameState();
-        
-        // Simple betting - everyone just calls to see showdown
-        std::cout << "\n=== PRE-FLOP ===" << std::endl;
-        int currentPlayer = game.getCurrentPlayerIndex();
-        
-        // Pre-flop: Manual betting to avoid loops
-        // Manual betting to create the special scenario for hand 100 (like old hand 2)
-        if (handNum == 100) {
-            // Bob calls $20
-            if (game.canPlayerAct(currentPlayer)) {
-                game.playerCall(currentPlayer);
-                currentPlayer = game.getCurrentPlayerIndex();
-            }
-
-            // Charlie calls $20  
-            if (game.canPlayerAct(currentPlayer)) {
-                game.playerCall(currentPlayer);
-                currentPlayer = game.getCurrentPlayerIndex();
-            }
-
-            // Diana goes ALL-IN for $1000
-            if (game.canPlayerAct(currentPlayer)) {
-                game.playerAllIn(currentPlayer);
-                currentPlayer = game.getCurrentPlayerIndex();
-            }
-
-            // Alice calls the all-in
-            if (game.canPlayerAct(currentPlayer)) {
-                game.playerCall(currentPlayer);
-                currentPlayer = game.getCurrentPlayerIndex();
-            }
-            
-            // Bob calls the all-in
-            if (game.canPlayerAct(currentPlayer)) {
-                game.playerCall(currentPlayer);
-                currentPlayer = game.getCurrentPlayerIndex();
-            }
-            
-            // Complete the rest with auto-complete
+    // Start buffering to capture hand output
+    startBuffering();
+    
+    std::cout << "\n=== HAND 1 ===" << std::endl;
+    
+    // Start the hand
+    game.startNewHand();
+    
+    // Show initial state
+    game.showGameState();
+    
+    // Simple betting - everyone just calls to see showdown
+    std::cout << "\n=== PRE-FLOP ===" << std::endl;
+    
+    // Complete pre-flop betting 
+    while (!game.isHandComplete() && game.getCurrentRound() == BettingRound::PRE_FLOP) {
+        if (game.getCurrentPlayerIndex() != -1) {
             game.autoCompleteCurrentBettingRound();
         }
-        
-        // Complete pre-flop betting 
-        while (!game.isHandComplete() && game.getCurrentRound() == BettingRound::PRE_FLOP) {
-            if (game.getCurrentPlayerIndex() != -1) {
+        if (game.getCurrentRound() == BettingRound::PRE_FLOP) {
+            game.nextPhase();
+        }
+    }
+    
+    // Complete the rest of the hand (only if not already complete)
+    if (!game.isHandComplete()) {
+        while (!game.isHandComplete()) {
+            if (!game.isHandComplete() && game.getCurrentPlayerIndex() != -1) {
                 game.autoCompleteCurrentBettingRound();
             }
-            if (game.getCurrentRound() == BettingRound::PRE_FLOP) {
+            if (!game.isHandComplete()) {
                 game.nextPhase();
             }
         }
-        
-        // Complete the rest of the hand (only if not already complete)
-        if (!game.isHandComplete()) {
-            while (!game.isHandComplete()) {
-                if (!game.isHandComplete() && game.getCurrentPlayerIndex() != -1) {
-                    game.autoCompleteCurrentBettingRound();
-                }
-                if (!game.isHandComplete()) {
-                    game.nextPhase();
-                }
-            }
-        }
-        
-        // Note: Real tie detection happens in the Game class during showdown
-        // when hands are equally ranked and pots are split
-        
-        // Show results for this hand
-        std::cout << "\nHand " << handNum << " chip counts:" << std::endl;
-        for (int i = 0; i < table.getPlayerCount(); i++) {
-            const Player* player = table.getPlayer(i);
-            if (player) {
-                int gained = player->getChips() - startingChips[i];
-                std::cout << player->getName() << ": $" << player->getChips() 
-                          << " (" << (gained >= 0 ? "+" : "") << gained << ")" << std::endl;
-            }
-        }
-        
-        std::cout << "\n=== END HAND " << handNum << " ===" << std::endl;
-        
-        // Check if this hand is interesting (side pots or chopped pots)
-        bool isInteresting = game.isInterestingHand();
-        
-        // Display the hand if it's interesting, otherwise discard the buffer
-        if (isInteresting) {
-            endBuffering(true);  // Display the buffered output
-            displayedHands++;
-        } else {
-            endBuffering(false);  // Discard the buffered output
-        }
-        
-        // Keep chips cumulative - no reset between hands
     }
     
-    std::cout << "\n=== SIMULATION COMPLETE ===" << std::endl;
-    std::cout << "Displayed " << displayedHands << " interesting hands out of 100 total hands." << std::endl;
+    // Show results for this hand
+    std::cout << "\nHand 1 chip counts:" << std::endl;
+    for (int i = 0; i < table.getPlayerCount(); i++) {
+        const Player* player = table.getPlayer(i);
+        if (player) {
+            int gained = player->getChips() - startingChips[i];
+            std::cout << player->getName() << ": $" << player->getChips() 
+                      << " (" << (gained >= 0 ? "+" : "") << gained << ")" << std::endl;
+        }
+    }
+    
+    std::cout << "\n=== END HAND 1 ===" << std::endl;
+    
+    // End buffering and display the hand (option activated)
+    endBuffering(true);  // Display the buffered hand output
     
     std::cout << "\n=== FINAL CHIP COUNTS ===" << std::endl;
     for (int i = 0; i < table.getPlayerCount(); i++) {

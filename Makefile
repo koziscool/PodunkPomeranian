@@ -2,7 +2,7 @@ CXX = g++
 CXXFLAGS = -std=c++14 -Wall -Wextra
 TARGET = poker
 TIE_TARGET = tie_demo
-OBJS = main.o card.o deck.o player.o table.o game.o hand_evaluator.o side_pot.o
+OBJS = main.o card.o deck.o player.o table.o poker_game.o texas_holdem.o seven_card_stud.o hand_evaluator.o side_pot.o
 TIE_OBJS = tie_demo.o card.o deck.o player.o table.o game.o hand_evaluator.o side_pot.o
 
 all: $(TARGET) $(TIE_TARGET)
@@ -13,7 +13,7 @@ $(TARGET): $(OBJS)
 $(TIE_TARGET): $(TIE_OBJS)
 	$(CXX) $(CXXFLAGS) -o $(TIE_TARGET) $(TIE_OBJS)
 
-main.o: main.cpp game.h table.h
+main.o: main.cpp seven_card_stud.h texas_holdem.h poker_game.h table.h
 	$(CXX) $(CXXFLAGS) -c main.cpp
 
 tie_demo.o: tie_demo.cpp game.h table.h
@@ -30,6 +30,15 @@ player.o: player.cpp player.h card.h
 
 table.o: table.cpp table.h player.h deck.h card.h side_pot.h
 	$(CXX) $(CXXFLAGS) -c table.cpp
+
+poker_game.o: poker_game.cpp poker_game.h table.h player.h hand_evaluator.h poker_variant.h
+	$(CXX) $(CXXFLAGS) -c poker_game.cpp
+
+texas_holdem.o: texas_holdem.cpp texas_holdem.h poker_game.h
+	$(CXX) $(CXXFLAGS) -c texas_holdem.cpp
+
+seven_card_stud.o: seven_card_stud.cpp seven_card_stud.h poker_game.h
+	$(CXX) $(CXXFLAGS) -c seven_card_stud.cpp
 
 game.o: game.cpp game.h table.h player.h deck.h card.h hand_evaluator.h
 	$(CXX) $(CXXFLAGS) -c game.cpp

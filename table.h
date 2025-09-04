@@ -44,6 +44,7 @@ public:
     int getPot() const;
     void collectBets();
     void createSidePotsFromCurrentBets();
+    void createSidePotsFromInFor(); // New method for inFor-based pot collection
     void returnUnmatchedChips(const std::vector<std::pair<int, int>>& playerBets);
     
     // Side pot management
@@ -57,6 +58,9 @@ public:
     // Dealer position
     int getDealerPosition() const;
     void advanceDealer();
+    
+    // Deck access
+    Deck& getDeck();
 };
 
 #endif 

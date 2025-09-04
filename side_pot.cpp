@@ -7,7 +7,13 @@ void SidePotManager::clearPots() {
 }
 
 void SidePotManager::createSidePotsFromBets(const std::vector<std::pair<int, int>>& playerBets) {
-    clearPots();
+    createSidePotsFromBets(playerBets, true); // Default behavior: clear existing pots
+}
+
+void SidePotManager::createSidePotsFromBets(const std::vector<std::pair<int, int>>& playerBets, bool clearExisting) {
+    if (clearExisting) {
+        clearPots();
+    }
     
     if (playerBets.empty()) {
         return;
@@ -100,6 +106,14 @@ void SidePotManager::addToMainPot(int amount) {
     }
 }
 
+void SidePotManager::addEligiblePlayersToMainPot(const std::set<int>& players) {
+    if (!pots.empty()) {
+        for (int playerIndex : players) {
+            pots[0].eligiblePlayers.insert(playerIndex);
+        }
+    }
+}
+
 int SidePotManager::getTotalPotAmount() const {
     int total = 0;
     for (const auto& pot : pots) {
@@ -126,21 +140,13 @@ void SidePotManager::showPotBreakdown() const {
         return;
     }
     
-    std::cout << "\n=== SHOWDOWN ===" << std::endl;
     for (size_t i = 0; i < pots.size(); i++) {
         const auto& pot = pots[i];
         if (i == 0) {
-            std::cout << "Main pot: $" << pot.amount;
+            std::cout << "Main Pot: $" << pot.amount;
         } else {
-            std::cout << "Side pot " << i << ": $" << pot.amount;
+            std::cout << "  |  Side Pot " << i << ": $" << pot.amount;
         }
-        std::cout << " (eligible players: ";
-        bool first = true;
-        for (int player : pot.eligiblePlayers) {
-            if (!first) std::cout << ", ";
-            std::cout << player;
-            first = false;
-        }
-        std::cout << ")" << std::endl;
     }
+    std::cout << std::endl;
 } 

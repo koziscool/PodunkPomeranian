@@ -19,8 +19,10 @@ private:
 public:
     void clearPots();
     void createSidePotsFromBets(const std::vector<std::pair<int, int>>& playerBets);
+    void createSidePotsFromBets(const std::vector<std::pair<int, int>>& playerBets, bool clearExisting);
     void addToPot(int amount, const std::set<int>& eligiblePlayers);
     void addToMainPot(int amount);
+    void addEligiblePlayersToMainPot(const std::set<int>& players); // Add eligible players to main pot
     
     int getTotalPotAmount() const;
     int getMainPotAmount() const;

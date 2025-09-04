@@ -1,6 +1,7 @@
 #include "table.h"
 #include <iostream>
 #include <iomanip>
+#include <set> // Added for std::set
 
 Table::Table() : dealerPosition(0), currentBet(0) {
     deck.shuffle();
@@ -164,18 +165,19 @@ void Table::collectBets() {
     // Only call createSidePotsFromCurrentBets if there are actually current bets to collect
     bool hasCurrentBets = false;
     for (const auto& player : players) {
-        if (player && player->getCurrentBet() > 0) {
+        if (player && player->getInFor() > 0) {
             hasCurrentBets = true;
             break;
         }
     }
     
     if (hasCurrentBets) {
-        createSidePotsFromCurrentBets();
+        createSidePotsFromInFor();
     }
     
     for (auto& player : players) {
         player->resetBet();
+        player->resetInFor();
     }
     currentBet = 0;
 }
@@ -206,6 +208,65 @@ void Table::createSidePotsFromCurrentBets() {
     
     // Return unmatched chips to players
     returnUnmatchedChips(playerBets);
+}
+
+void Table::createSidePotsFromInFor() {
+    std::vector<std::pair<int, int>> playerBets;
+    int foldedPlayerMoney = 0;
+    
+    // Separate active players from folded players
+    for (int i = 0; i < getPlayerCount(); i++) {
+        Player* player = getPlayer(i);
+        if (player && player->getInFor() > 0) {
+            if (player->hasFolded()) {
+                foldedPlayerMoney += player->getInFor();
+            } else {
+                playerBets.emplace_back(i, player->getInFor());
+            }
+        }
+    }
+    
+    // Check if all active players bet the same amount (no side pots needed)
+    bool allSameAmount = true;
+    if (!playerBets.empty()) {
+        int firstAmount = playerBets[0].second;
+        for (const auto& bet : playerBets) {
+            if (bet.second != firstAmount) {
+                allSameAmount = false;
+                break;
+            }
+        }
+    }
+    
+    if (allSameAmount && !playerBets.empty()) {
+        // No side pots needed - just add all amounts to main pot
+        int totalBettingRoundAmount = 0;
+        std::set<int> eligiblePlayers;
+        
+        for (const auto& bet : playerBets) {
+            totalBettingRoundAmount += bet.second;
+            eligiblePlayers.insert(bet.first); // Add player to eligible list
+        }
+        totalBettingRoundAmount += foldedPlayerMoney;
+        
+        // If there's already a main pot, add to it and update eligible players
+        if (!sidePotManager.getPots().empty()) {
+            sidePotManager.addToMainPot(totalBettingRoundAmount);
+            // Update eligible players for the main pot
+            sidePotManager.addEligiblePlayersToMainPot(eligiblePlayers);
+        } else {
+            // Create new main pot with eligible players
+            sidePotManager.addToPot(totalBettingRoundAmount, eligiblePlayers);
+        }
+    } else {
+        // Side pots needed - use the full side pot creation logic
+        sidePotManager.createSidePotsFromBets(playerBets);
+        
+        // Add folded player money to the main pot
+        if (foldedPlayerMoney > 0) {
+            sidePotManager.addToMainPot(foldedPlayerMoney);
+        }
+    }
 }
 
 void Table::returnUnmatchedChips(const std::vector<std::pair<int, int>>& playerBets) {
@@ -267,7 +328,9 @@ int Table::getDealerPosition() const {
 }
 
 void Table::advanceDealer() {
-    if (!players.empty()) {
-        dealerPosition = (dealerPosition + 1) % static_cast<int>(players.size());
-    }
+    dealerPosition = (dealerPosition + 1) % players.size();
+}
+
+Deck& Table::getDeck() {
+    return deck;
 } 

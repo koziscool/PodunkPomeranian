@@ -1,7 +1,8 @@
-#include "game.h"
+#include "seven_card_stud.h"
 #include "table.h"
 #include <iostream>
 #include <sstream>
+#include <memory>
 
 // Global buffer for capturing output
 std::stringstream outputBuffer;
@@ -24,20 +25,23 @@ void endBuffering(bool display = true) {
 }
 
 int main() {
-    std::cout << "=== TEXAS HOLD'EM POKER - SINGLE HAND ===" << std::endl;
-        
-    // Create table and game
-    Table table;
-    Game game(&table);
+    std::cout << "=== 7-CARD STUD - SINGLE HAND ===" << std::endl;
+    std::cout << "Ante: $5, Bring-in: $10, Small bet: $20, Large bet: $40" << std::endl;
     
-    // Add players with different stacks to test side pots
+    // Create table
+    Table table;
+    
+    // Add players for stud
     table.addPlayer("Alice", 1000);
     table.addPlayer("Bob", 1000);
-    table.addPlayer("Charlie", 150);  // Short stack
+    table.addPlayer("Charlie", 1000);
     table.addPlayer("Diana", 1000);
     
+    // Create 7-Card Stud game
+    std::unique_ptr<SevenCardStud> game = std::make_unique<SevenCardStud>(&table, 5, 10, 20, 40);
+    
     // Track starting chip amounts for accurate gain/loss calculation
-    std::vector<int> startingChips = {1000, 1000, 150, 1000};
+    std::vector<int> startingChips = {1000, 1000, 1000, 1000};
     
     // Start buffering to capture hand output
     startBuffering();
@@ -45,34 +49,17 @@ int main() {
     std::cout << "\n=== HAND 1 ===" << std::endl;
     
     // Start the hand
-    game.startNewHand();
+    game->startNewHand();
     
     // Show initial state
-    game.showGameState();
+    game->showGameState();
     
-    // Simple betting - everyone just calls to see showdown
-    std::cout << "\n=== PRE-FLOP ===" << std::endl;
+    // Run the game
+    game->runBettingRounds();
     
-    // Complete pre-flop betting 
-    while (!game.isHandComplete() && game.getCurrentRound() == BettingRound::PRE_FLOP) {
-        if (game.getCurrentPlayerIndex() != -1) {
-            game.autoCompleteCurrentBettingRound();
-        }
-        if (game.getCurrentRound() == BettingRound::PRE_FLOP) {
-            game.nextPhase();
-        }
-    }
-    
-    // Complete the rest of the hand (only if not already complete)
-    if (!game.isHandComplete()) {
-        while (!game.isHandComplete()) {
-            if (!game.isHandComplete() && game.getCurrentPlayerIndex() != -1) {
-                game.autoCompleteCurrentBettingRound();
-            }
-            if (!game.isHandComplete()) {
-                game.nextPhase();
-            }
-        }
+    // Conduct showdown if not already done
+    if (!game->isHandComplete()) {
+        game->conductShowdown();
     }
     
     // Show results for this hand

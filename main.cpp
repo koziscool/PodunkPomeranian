@@ -1,4 +1,7 @@
+#include "poker_game.h"
+#include "texas_holdem.h"
 #include "seven_card_stud.h"
+#include "omaha_hi_lo.h"
 #include "table.h"
 #include <iostream>
 #include <sstream>
@@ -25,20 +28,52 @@ void endBuffering(bool display = true) {
 }
 
 int main() {
-    std::cout << "=== 7-CARD STUD - SINGLE HAND ===" << std::endl;
-    std::cout << "Ante: $5, Bring-in: $10, Small bet: $20, Large bet: $40" << std::endl;
+    std::cout << "=== POKER VARIANTS ===" << std::endl;
+    std::cout << "Select a poker variant:" << std::endl;
+    std::cout << "1. Texas Hold'em (NL)" << std::endl;
+    std::cout << "2. 7-Card Stud" << std::endl;
+    std::cout << "3. Omaha Hi-Lo (8 or Better)" << std::endl;
+    std::cout << "Enter choice (1-3): ";
+    
+    int choice;
+    std::cin >> choice;
     
     // Create table
     Table table;
     
-    // Add players for stud
+    // Add players
     table.addPlayer("Alice", 1000);
     table.addPlayer("Bob", 1000);
     table.addPlayer("Charlie", 1000);
     table.addPlayer("Diana", 1000);
     
-    // Create 7-Card Stud game
-    std::unique_ptr<SevenCardStud> game = std::make_unique<SevenCardStud>(&table, 5, 10, 20, 40);
+    // Set dealer position (Bob is dealer)
+    table.advanceDealer(); // Move from 0 (Alice) to 1 (Bob)
+    
+    std::unique_ptr<PokerGame> game;
+    
+    // Create appropriate game based on choice
+    switch (choice) {
+        case 1:
+            std::cout << "\n=== TEXAS HOLD'EM (NL) - SINGLE HAND ===" << std::endl;
+            std::cout << "Blinds: $10/$20" << std::endl;
+            game = std::make_unique<TexasHoldem>(&table);
+            break;
+        case 2:
+            std::cout << "\n=== 7-CARD STUD - SINGLE HAND ===" << std::endl;
+            std::cout << "Ante: $5, Bring-in: $10, Small bet: $20, Large bet: $40" << std::endl;
+            game = std::make_unique<SevenCardStud>(&table, 5, 10, 20, 40);
+            break;
+        case 3:
+            std::cout << "\n=== OMAHA HI-LO (8 OR BETTER) - SINGLE HAND ===" << std::endl;
+            std::cout << "Blinds: $10/$20" << std::endl;
+            game = std::make_unique<OmahaHiLo>(&table);
+            break;
+        default:
+            std::cout << "Invalid choice. Defaulting to Texas Hold'em." << std::endl;
+            game = std::make_unique<TexasHoldem>(&table);
+            break;
+    }
     
     // Track starting chip amounts for accurate gain/loss calculation
     std::vector<int> startingChips = {1000, 1000, 1000, 1000};
@@ -62,29 +97,24 @@ int main() {
         game->conductShowdown();
     }
     
-    // Show results for this hand
-    std::cout << "\nHand 1 chip counts:" << std::endl;
-    for (int i = 0; i < table.getPlayerCount(); i++) {
-        const Player* player = table.getPlayer(i);
-        if (player) {
-            int gained = player->getChips() - startingChips[i];
-            std::cout << player->getName() << ": $" << player->getChips() 
-                      << " (" << (gained >= 0 ? "+" : "") << gained << ")" << std::endl;
-        }
-    }
-    
     std::cout << "\n=== END HAND 1 ===" << std::endl;
     
-    // End buffering and display the hand (option activated)
-    endBuffering(true);  // Display the buffered hand output
+    // End buffering and display the hand
+    endBuffering(true);
     
+    // Display final chip counts
     std::cout << "\n=== FINAL CHIP COUNTS ===" << std::endl;
     for (int i = 0; i < table.getPlayerCount(); i++) {
-        const Player* player = table.getPlayer(i);
+        Player* player = table.getPlayer(i);
         if (player) {
-            int gained = player->getChips() - startingChips[i];
-            std::cout << player->getName() << ": $" << player->getChips() 
-                      << " (" << (gained >= 0 ? "+" : "") << gained << ")" << std::endl;
+            int gain = player->getChips() - startingChips[i];
+            std::cout << player->getName() << ": $" << player->getChips();
+            if (gain > 0) {
+                std::cout << " (+$" << gain << ")";
+            } else if (gain < 0) {
+                std::cout << " (-$" << (-gain) << ")";
+            }
+            std::cout << std::endl;
         }
     }
     

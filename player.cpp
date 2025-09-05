@@ -175,7 +175,7 @@ void Player::resetForNewHand() {
 void Player::showStatus(bool showCards) const {
     std::cout << std::setw(15) << name
               << " | Chips: " << std::setw(6) << chips
-              << " | Bet: " << std::setw(4) << currentBet;
+              << " | Bet: " << std::setw(4) << inFor;
 
     if (showCards) {
         std::cout << " | Cards: ";

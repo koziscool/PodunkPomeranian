@@ -37,25 +37,40 @@ bool PokerGame::playerCall(int playerIndex) {
     Player* player = table->getPlayer(playerIndex);
     if (!player) return false;
     
-    int callAmount = table->getCurrentBet() - player->getCurrentBet();
+    int currentBet = table->getCurrentBet();
+    int callAmount = currentBet - player->getInFor();
     if (callAmount <= 0) {
         return playerCheck(playerIndex);
     }
     
-    int totalCallAmount = table->getCurrentBet();
-    PlayerAction action = player->call(totalCallAmount);
-    std::cout << player->getName() << " calls $" << totalCallAmount << std::endl;
-    return action == PlayerAction::CALL;
+    if (callAmount >= player->getChips()) {
+        return playerAllIn(playerIndex);
+    }
+    
+    player->addToInFor(callAmount);
+    std::cout << player->getName() << " calls $" << currentBet << std::endl;
+    return true;
 }
 
 bool PokerGame::playerRaise(int playerIndex, int amount) {
     Player* player = table->getPlayer(playerIndex);
     if (!player) return false;
     
-    PlayerAction action = player->raise(amount);
+    // Calculate additional amount needed based on inFor system
+    int additionalAmount = amount - player->getInFor();
+    if (additionalAmount <= 0) {
+        // Invalid raise - they're already at or above the raise amount
+        return false;
+    }
+    
+    if (additionalAmount >= player->getChips()) {
+        return playerAllIn(playerIndex);
+    }
+    
+    player->addToInFor(additionalAmount);
     table->setCurrentBet(amount);
     std::cout << player->getName() << " raises to $" << amount << std::endl;
-    return action == PlayerAction::RAISE;
+    return true;
 }
 
 bool PokerGame::playerFold(int playerIndex) {

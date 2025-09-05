@@ -3,7 +3,8 @@
 
 enum class PokerVariant {
     TEXAS_HOLDEM,
-    SEVEN_CARD_STUD
+    SEVEN_CARD_STUD,
+    OMAHA_HI_LO
 };
 
 struct VariantConfig {

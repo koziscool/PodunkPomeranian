@@ -5,29 +5,40 @@
 #include "player.h"
 #include "hand_evaluator.h"
 #include "poker_variant.h"
+#include "variants.h"
 #include "hand_history.h"
 #include <vector>
 
 class PokerGame {
 protected:
     Table* table;
-    VariantConfig config;
+    VariantInfo variantInfo;
     int currentPlayerIndex;
     bool handComplete;
     bool currentHandHasChoppedPot; // Track if current hand has chopped pot
     HandHistory handHistory;
     std::vector<bool> hasActedThisRound;
+    UnifiedBettingRound currentRound;
     
 public:
-    PokerGame(Table* gameTable, const VariantConfig& gameConfig);
+    PokerGame(Table* gameTable, const VariantInfo& variant);
     virtual ~PokerGame() = default;
     
-    // Pure virtual methods that each variant must implement
-    virtual void startNewHand() = 0;
-    virtual void dealInitialCards() = 0;
-    virtual void runBettingRounds() = 0;
-    virtual void conductShowdown() = 0;
-    virtual bool atShowdown() const = 0;  // Each variant defines when they're at showdown
+    // Unified game flow methods (no longer pure virtual)
+    virtual void startNewHand();
+    virtual void dealInitialCards();
+    virtual void runBettingRounds();
+    virtual void conductShowdown();
+    virtual bool atShowdown() const;
+    
+    // Structure-specific game flow methods
+    virtual void gameFlowForBOARD();
+    virtual void gameFlowForSTUD();
+    
+    // Unified betting operations
+    virtual void postBlinds();        // For BOARD games
+    virtual void postAntesAndBringIn(); // For STUD games
+    virtual void nextRound();         // Advance to next unified round
     
     // Generic hand completion logic (same for all poker variants)
     virtual bool isHandComplete() const;
@@ -72,8 +83,11 @@ public:
     virtual void displayWinningHands(const std::vector<int>& winners, const std::vector<int>& eligiblePlayers) const; // Show hand descriptions (virtual for variants)
     void splitPotAmongWinners(int potAmount, const std::vector<int>& winners) const; // Calculate split amounts (doesn't transfer)
     
+    // Variant-specific hand evaluation methods
+    HandResult evaluateOmahaHand(const std::vector<Card>& holeCards, const std::vector<Card>& communityCards) const;
+    
     // Getters
-    VariantConfig getConfig() const { return config; }
+    VariantInfo getVariantInfo() const { return variantInfo; }
     int getCurrentPlayerIndex() const { return currentPlayerIndex; }
 };
 

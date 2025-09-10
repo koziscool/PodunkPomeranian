@@ -8,6 +8,7 @@
 #include <random>
 
 class HandHistory; // Forward declaration
+struct VariantInfo; // Forward declaration
 
 enum class PlayerPersonality {
     TIGHT_PASSIVE,   // Plays few hands, rarely raises
@@ -76,7 +77,7 @@ public:
     
     // Decision making - the main interface for AI players
     PlayerAction makeDecision(const HandHistory& history, int callAmount, bool canCheck = false) const;
-    int calculateRaiseAmount(const HandHistory& history, int currentBet) const;
+    int calculateRaiseAmount(const HandHistory& history, int currentBet, const VariantInfo& variant) const;
     
     // Game state management
     void resetBet();

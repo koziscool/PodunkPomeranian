@@ -1,7 +1,4 @@
 #include "poker_game.h"
-#include "texas_holdem.h"
-#include "seven_card_stud.h"
-#include "omaha_hi_lo.h"
 #include "table.h"
 #include <iostream>
 #include <sstream>
@@ -52,26 +49,26 @@ int main() {
     
     std::unique_ptr<PokerGame> game;
     
-    // Create appropriate game based on choice
+    // Create unified game based on choice using VariantInfo
     switch (choice) {
         case 1:
             std::cout << "\n=== TEXAS HOLD'EM (NL) - SINGLE HAND ===" << std::endl;
             std::cout << "Blinds: $10/$20" << std::endl;
-            game = std::make_unique<TexasHoldem>(&table);
+            game = std::make_unique<PokerGame>(&table, PokerVariants::TEXAS_HOLDEM);
             break;
         case 2:
             std::cout << "\n=== 7-CARD STUD - SINGLE HAND ===" << std::endl;
             std::cout << "Ante: $5, Bring-in: $10, Small bet: $20, Large bet: $40" << std::endl;
-            game = std::make_unique<SevenCardStud>(&table, 5, 10, 20, 40);
+            game = std::make_unique<PokerGame>(&table, PokerVariants::SEVEN_CARD_STUD);
             break;
         case 3:
             std::cout << "\n=== OMAHA HI-LO (8 OR BETTER) - SINGLE HAND ===" << std::endl;
             std::cout << "Blinds: $10/$20" << std::endl;
-            game = std::make_unique<OmahaHiLo>(&table);
+            game = std::make_unique<PokerGame>(&table, PokerVariants::OMAHA_HI_LO);
             break;
         default:
             std::cout << "Invalid choice. Defaulting to Texas Hold'em." << std::endl;
-            game = std::make_unique<TexasHoldem>(&table);
+            game = std::make_unique<PokerGame>(&table, PokerVariants::TEXAS_HOLDEM);
             break;
     }
     

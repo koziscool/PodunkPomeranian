@@ -1,5 +1,6 @@
 #include "player.h"
 #include "hand_history.h"
+#include "variants.h"
 #include <iostream>
 #include <algorithm>
 #include <ctime>
@@ -281,19 +282,50 @@ PlayerAction Player::makeDecision(const HandHistory& history, int callAmount, bo
     return PlayerAction::FOLD;
 }
 
-int Player::calculateRaiseAmount(const HandHistory& history, int currentBet) const {
-    // TEMPORARY FIX: For limit games, use fixed raise increments
-    // TODO: Pass game variant info to player so it knows betting structure
-    
-    if (currentBet == 10) {
-        // Bring-in situation: complete to small bet
-        return 20;
-    } else if (currentBet == 20 || currentBet == 0) {
-        // Small bet round: raise by small bet increment
-        return currentBet + 20;
+int Player::calculateRaiseAmount(const HandHistory& /* history */, int currentBet, const VariantInfo& variant) const {
+    if (variant.bettingStruct == BETTINGSTRUCTURE_LIMIT) {
+        // Limit poker logic
+        if (variant.gameStruct == GAMESTRUCTURE_STUD) {
+            // Seven Card Stud limit logic
+            int bringIn = variant.betSizes[1]; 
+            int smallBet = variant.betSizes[2];
+            int bigBet = variant.betSizes[3];
+            
+            if (currentBet == bringIn) {
+                // Complete bring-in to small bet
+                return smallBet;
+            } else if (currentBet == smallBet || currentBet == 0) {
+                // Small bet round: raise by small bet increment
+                return currentBet + smallBet;
+            } else {
+                // Big bet round: raise by big bet increment
+                return currentBet + bigBet;
+            }
+        } else {
+            // Board games (Hold'em, Omaha) limit logic
+            int bigBlind = variant.betSizes[1];
+            
+            // In limit Hold'em/Omaha: small bet = big blind, big bet = 2 * big blind
+            if (currentBet <= bigBlind) {
+                // Small bet round: raise by small bet (= big blind)
+                return currentBet + bigBlind;
+            } else {
+                // Big bet round: raise by big bet (= 2 * big blind)
+                return currentBet + (bigBlind * 2);
+            }
+        }
     } else {
-        // Assume big bet round: raise by big bet increment  
-        return currentBet + 40;
+        // No-limit poker logic (simplified for now)
+        double handStrength = evaluateHandStrength();
+        
+        // Base raise size on current bet and hand strength
+        int baseRaise = std::max(currentBet * 2, 50); // Minimum raise of 50
+        
+        // Adjust for personality and hand strength
+        baseRaise = static_cast<int>(baseRaise * (0.5 + handStrength));
+        
+        // Don't bet more than we have
+        return std::min(baseRaise, chips);
     }
 }
 

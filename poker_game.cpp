@@ -4,7 +4,8 @@
 #include <algorithm>
 
 PokerGame::PokerGame(Table* gameTable, const VariantConfig& gameConfig)
-    : table(gameTable), config(gameConfig), currentPlayerIndex(0), handComplete(false), currentHandHasChoppedPot(false) {}
+    : table(gameTable), config(gameConfig), currentPlayerIndex(0), handComplete(false), 
+      currentHandHasChoppedPot(false), handHistory(config.variant, 1) {}
 
 void PokerGame::showGameState() const {
     table->showTable();
@@ -68,8 +69,14 @@ bool PokerGame::playerRaise(int playerIndex, int amount) {
     }
     
     player->addToInFor(additionalAmount);
+    int previousBet = table->getCurrentBet();
     table->setCurrentBet(amount);
-    std::cout << player->getName() << " raises to $" << amount << std::endl;
+    
+    if (previousBet == 0) {
+        std::cout << player->getName() << " bets $" << amount << std::endl;
+    } else {
+        std::cout << player->getName() << " raises to $" << amount << std::endl;
+    }
     return true;
 }
 
@@ -97,7 +104,10 @@ bool PokerGame::playerCheck(int playerIndex) {
     Player* player = table->getPlayer(playerIndex);
     if (!player) return false;
     
-    if (table->getCurrentBet() > 0) {
+    int currentBet = table->getCurrentBet();
+    int callAmount = currentBet - player->getInFor();
+    
+    if (callAmount > 0) {
         std::cout << player->getName() << " cannot check - must call or fold" << std::endl;
         return false;
     }
@@ -229,4 +239,183 @@ void PokerGame::splitPotAmongWinners(int potAmount, const std::vector<int>& winn
         std::cout << " (+" << remainder << " to first " << remainder << " winner" << (remainder > 1 ? "s" : "") << ")";
     }
     std::cout << std::endl;
+}
+
+// Common betting round management methods
+void PokerGame::initializeHandHistory(int handNumber) {
+    handHistory = HandHistory(config.variant, handNumber);
+    hasActedThisRound.assign(table->getPlayerCount(), false);
+    
+    // Add all players to hand history
+    for (int i = 0; i < table->getPlayerCount(); i++) {
+        Player* player = table->getPlayer(i);
+        if (player) {
+            bool isDealer = (i == table->getDealerPosition());
+            handHistory.addPlayer(player->getPlayerId(), player->getName(), i, player->getChips(), isDealer);
+        }
+    }
+}
+
+void PokerGame::recordPlayerAction(HandHistoryRound round, int playerId, ActionType actionType, int amount, const std::string& description) {
+    handHistory.recordAction(round, playerId, actionType, amount, table->getCurrentBet(), description);
+}
+
+bool PokerGame::isBettingComplete() const {
+    int currentBet = table->getCurrentBet();
+    
+    for (int i = 0; i < table->getPlayerCount(); i++) {
+        Player* player = table->getPlayer(i);
+        if (player && !player->hasFolded() && !player->isAllIn()) {
+            // If player hasn't acted this round, betting isn't complete
+            if (!hasActedThisRound[i]) {
+                std::cout << "DEBUG: Player " << i << " (" << player->getName() << ") hasn't acted this round" << std::endl;
+                return false;
+            }
+            // If player's inFor amount doesn't match current bet, betting isn't complete
+            if (player->getInFor() < currentBet) {
+                std::cout << "DEBUG: Player " << i << " (" << player->getName() << ") inFor=" << player->getInFor() << " < currentBet=" << currentBet << std::endl;
+                return false;
+            }
+        }
+    }
+    
+    return true;
+}
+
+void PokerGame::advanceToNextPlayer() {
+    int playerCount = table->getPlayerCount();
+    int startIndex = currentPlayerIndex;
+    
+    do {
+        currentPlayerIndex = (currentPlayerIndex + 1) % playerCount;
+        Player* player = table->getPlayer(currentPlayerIndex);
+        if (player && !player->hasFolded() && !player->isAllIn()) {
+            return; // Found next active player
+        }
+    } while (currentPlayerIndex != startIndex);
+    
+    // No active players found
+    currentPlayerIndex = -1;
+}
+
+int PokerGame::countActivePlayers() const {
+    int count = 0;
+    for (int i = 0; i < table->getPlayerCount(); i++) {
+        Player* player = table->getPlayer(i);
+        if (player && !player->hasFolded()) {
+            count++;
+        }
+    }
+    return count;
+}
+
+bool PokerGame::allRemainingPlayersAllIn() const {
+    int activeNonAllInCount = 0;
+    for (int i = 0; i < table->getPlayerCount(); i++) {
+        Player* player = table->getPlayer(i);
+        if (player && !player->hasFolded() && !player->isAllIn()) {
+            activeNonAllInCount++;
+        }
+    }
+    return activeNonAllInCount <= 1;
+}
+
+bool PokerGame::canPlayerAct(int playerIndex) const {
+    Player* player = table->getPlayer(playerIndex);
+    return player && !player->hasFolded() && !player->isAllIn() && playerIndex == currentPlayerIndex;
+}
+
+void PokerGame::resetBettingRound() {
+    hasActedThisRound.assign(table->getPlayerCount(), false);
+}
+
+void PokerGame::completeBettingRound(HandHistoryRound currentRound) {
+    int actionCount = 0;
+    const int MAX_ACTIONS = 10; // Reduced safety limit
+    
+    // Quick exit if only one player remains
+    if (countActivePlayers() <= 1) {
+        return;
+    }
+    
+    while (!isBettingComplete() && actionCount < MAX_ACTIONS && countActivePlayers() > 1) {
+        if (actionCount > 5) {
+            std::cout << "DEBUG: actionCount=" << actionCount << ", isBettingComplete=" << isBettingComplete() << ", activePlayers=" << countActivePlayers() << std::endl;
+        }
+        int playerIndex = currentPlayerIndex;
+        
+        if (playerIndex == -1 || !canPlayerAct(playerIndex)) {
+            break;
+        }
+        
+        Player* player = table->getPlayer(playerIndex);
+        if (!player) {
+            break;
+        }
+        
+        int currentBet = table->getCurrentBet();
+        int callAmount = currentBet - player->getInFor();
+        bool canCheck = (callAmount <= 0);
+        
+        PlayerAction decision = player->makeDecision(handHistory, callAmount, canCheck);
+        
+        // Execute the player's decision
+        std::string actionDesc;
+        switch (decision) {
+            case PlayerAction::FOLD:
+                playerFold(playerIndex);
+                actionDesc = "folds";
+                break;
+            case PlayerAction::CHECK:
+                playerCheck(playerIndex);
+                actionDesc = "checks";
+                break;
+            case PlayerAction::CALL:
+                playerCall(playerIndex);
+                actionDesc = "calls $" + std::to_string(callAmount);
+                break;
+            case PlayerAction::RAISE: {
+                int raiseAmount = player->calculateRaiseAmount(handHistory, currentBet);
+                playerRaise(playerIndex, raiseAmount);
+                if (currentBet == 0) {
+                    actionDesc = "bets $" + std::to_string(raiseAmount);
+                } else {
+                    actionDesc = "raises to $" + std::to_string(raiseAmount);
+                }
+                break;
+            }
+            case PlayerAction::ALL_IN:
+                playerAllIn(playerIndex);
+                actionDesc = "goes all-in for $" + std::to_string(player->getChips());
+                break;
+        }
+        
+        // Record the action in hand history
+        recordPlayerAction(currentRound, player->getPlayerId(), 
+                          static_cast<ActionType>(decision), 
+                          (decision == PlayerAction::RAISE) ? player->calculateRaiseAmount(handHistory, currentBet) : callAmount,
+                          actionDesc);
+        
+        // Mark player as having acted
+        hasActedThisRound[playerIndex] = true;
+        
+        // Advance to next player
+        advanceToNextPlayer();
+        actionCount++;
+        
+        // Emergency break: if everyone is just checking repeatedly, force round to end
+        if (actionCount >= 6 && decision == PlayerAction::CHECK) {
+            // If we've had 6+ consecutive checks, betting round should be over
+            break;
+        }
+    }
+    
+    // Collect the inFor amounts to pots
+    collectBetsToInFor();
+}
+
+// Generic hand completion logic (same for all poker variants)
+bool PokerGame::isHandComplete() const {
+    int activePlayers = countActivePlayers();
+    return atShowdown() || activePlayers <= 1;
 } 

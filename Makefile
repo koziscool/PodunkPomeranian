@@ -1,23 +1,16 @@
 CXX = g++
 CXXFLAGS = -std=c++14 -Wall -Wextra
 TARGET = poker
-TIE_TARGET = tie_demo
-OBJS = main.o card.o deck.o player.o table.o poker_game.o texas_holdem.o seven_card_stud.o omaha_hi_lo.o hand_evaluator.o side_pot.o
-TIE_OBJS = tie_demo.o card.o deck.o player.o table.o game.o hand_evaluator.o side_pot.o
+OBJS = main.o card.o deck.o player.o table.o poker_game.o texas_holdem.o seven_card_stud.o omaha_hi_lo.o hand_evaluator.o side_pot.o hand_history.o
 
-all: $(TARGET) $(TIE_TARGET)
+all: $(TARGET)
 
 $(TARGET): $(OBJS)
 	$(CXX) $(CXXFLAGS) -o $(TARGET) $(OBJS)
 
-$(TIE_TARGET): $(TIE_OBJS)
-	$(CXX) $(CXXFLAGS) -o $(TIE_TARGET) $(TIE_OBJS)
-
 main.o: main.cpp poker_game.h texas_holdem.h seven_card_stud.h omaha_hi_lo.h table.h
 	$(CXX) $(CXXFLAGS) -c main.cpp
 
-tie_demo.o: tie_demo.cpp game.h table.h
-	$(CXX) $(CXXFLAGS) -c tie_demo.cpp
 
 card.o: card.cpp card.h
 	$(CXX) $(CXXFLAGS) -c card.cpp
@@ -52,7 +45,10 @@ hand_evaluator.o: hand_evaluator.cpp hand_evaluator.h card.h
 side_pot.o: side_pot.cpp side_pot.h
 	$(CXX) $(CXXFLAGS) -c side_pot.cpp
 
+hand_history.o: hand_history.cpp hand_history.h card.h poker_variant.h
+	$(CXX) $(CXXFLAGS) -c hand_history.cpp
+
 clean:
-	rm -f $(OBJS) $(TIE_OBJS) $(TARGET) $(TIE_TARGET)
+	rm -f $(OBJS) $(TARGET)
 
 .PHONY: all clean

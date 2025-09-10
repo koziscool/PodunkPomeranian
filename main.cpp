@@ -41,11 +41,11 @@ int main() {
     // Create table
     Table table;
     
-    // Add players
-    table.addPlayer("Alice", 1000);
-    table.addPlayer("Bob", 1000);
-    table.addPlayer("Charlie", 1000);
-    table.addPlayer("Diana", 1000);
+    // Add players with IDs and personalities
+    table.addPlayer("Alice", 1000, 0, PlayerPersonality::TIGHT_AGGRESSIVE);
+    table.addPlayer("Bob", 1000, 1, PlayerPersonality::LOOSE_PASSIVE);
+    table.addPlayer("Charlie", 1000, 2, PlayerPersonality::TIGHT_PASSIVE);
+    table.addPlayer("Diana", 1000, 3, PlayerPersonality::LOOSE_AGGRESSIVE);
     
     // Set dealer position (Bob is dealer)
     table.advanceDealer(); // Move from 0 (Alice) to 1 (Bob)
@@ -79,7 +79,7 @@ int main() {
     std::vector<int> startingChips = {1000, 1000, 1000, 1000};
     
     // Start buffering to capture hand output
-    startBuffering();
+    // startBuffering(); // DISABLED - causes infinite loop in Seven Card Stud
     
     std::cout << "\n=== HAND 1 ===" << std::endl;
     

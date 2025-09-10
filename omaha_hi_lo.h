@@ -3,6 +3,7 @@
 
 #include "poker_game.h"
 #include "poker_variant.h"
+#include "hand_history.h"
 
 enum class OmahaBettingRound {
     PRE_FLOP,
@@ -19,6 +20,7 @@ private:
     bool bettingComplete;
     std::vector<bool> hasActedThisRound;
     int currentPlayerIndex;
+    HandHistory handHistory;
 
 public:
     OmahaHiLo(Table* gameTable);
@@ -28,7 +30,7 @@ public:
     void dealInitialCards() override;
     void runBettingRounds() override;
     void conductShowdown() override;
-    bool isHandComplete() const override;
+    bool atShowdown() const override;
     
     // Omaha-specific methods
     void postBlinds();

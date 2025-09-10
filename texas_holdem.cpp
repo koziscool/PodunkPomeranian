@@ -11,13 +11,20 @@ void TexasHoldem::startNewHand() {
         return;
     }
     
-    // Initialize hasActedThisRound vector for all players
-    hasActedThisRound.assign(table->getPlayerCount(), false);
+    currentRound = BettingRound::PRE_FLOP;
+    bettingComplete = false;
+    
+    // Use base class HandHistory initialization
+    initializeHandHistory(1);
     
     table->startNewHand();
     dealInitialCards();
     postBlinds();
-    startBettingRound(BettingRound::PRE_FLOP);
+    
+    // Set initial player to act (UTG - 3 seats after dealer)
+    int dealerPos = table->getDealerPosition();
+    int playerCount = table->getPlayerCount();
+    currentPlayerIndex = (dealerPos + 3) % playerCount;
 }
 
 void TexasHoldem::dealInitialCards() {
@@ -25,26 +32,36 @@ void TexasHoldem::dealInitialCards() {
 }
 
 void TexasHoldem::runBettingRounds() {
-    std::cout << "\n=== PRE-FLOP ===" << std::endl;
-    
-    // Complete pre-flop betting 
-    while (!isHandComplete() && currentRound == BettingRound::PRE_FLOP) {
-        if (currentPlayerIndex != -1) {
-            autoCompleteCurrentBettingRound();
-        }
+    while (!isHandComplete()) {
         if (currentRound == BettingRound::PRE_FLOP) {
+            std::cout << "\n=== PRE-FLOP ===" << std::endl;
+            showGameState();
+            completeBettingRound(HandHistoryRound::PRE_FLOP);
             nextPhase();
+        } else if (currentRound == BettingRound::FLOP) {
+            std::cout << "\n=== FLOP ===" << std::endl;
+            table->dealFlop();
+            showGameState();
+            completeBettingRound(HandHistoryRound::FLOP);
+            nextPhase();
+        } else if (currentRound == BettingRound::TURN) {
+            std::cout << "\n=== TURN ===" << std::endl;
+            table->dealTurn();
+            showGameState();
+            completeBettingRound(HandHistoryRound::TURN);
+            nextPhase();
+        } else if (currentRound == BettingRound::RIVER) {
+            std::cout << "\n=== RIVER ===" << std::endl;
+            table->dealRiver();
+            showGameState();
+            completeBettingRound(HandHistoryRound::RIVER);
+            currentRound = BettingRound::SHOWDOWN;
         }
     }
     
-    // Complete the rest of the hand
-    while (!isHandComplete()) {
-        if (!isHandComplete() && currentPlayerIndex != -1) {
-            autoCompleteCurrentBettingRound();
-        }
-        if (!isHandComplete()) {
-            nextPhase();
-        }
+    // Conduct showdown if we reached it
+    if (currentRound == BettingRound::SHOWDOWN) {
+        conductShowdown();
     }
 }
 
@@ -54,8 +71,8 @@ void TexasHoldem::conductShowdown() {
     awardPotsStaged();
 }
 
-bool TexasHoldem::isHandComplete() const {
-    return currentRound == BettingRound::SHOWDOWN || countActivePlayers() <= 1;
+bool TexasHoldem::atShowdown() const {
+    return currentRound == BettingRound::SHOWDOWN;
 }
 
 void TexasHoldem::postBlinds() {
@@ -71,153 +88,63 @@ void TexasHoldem::postBlinds() {
     Player* bigBlindPlayer = table->getPlayer(bigBlindPos);
     
     if (smallBlindPlayer && bigBlindPlayer) {
-        smallBlindPlayer->call(config.smallBlind);
+        smallBlindPlayer->addToInFor(config.smallBlind);
         table->setCurrentBet(config.smallBlind);
-        bigBlindPlayer->call(config.bigBlind);
+        
+        // Record small blind using base class method
+        recordPlayerAction(HandHistoryRound::PRE_HAND, smallBlindPlayer->getPlayerId(),
+                          ActionType::POST_BLIND, config.smallBlind, 
+                          "posts small blind $" + std::to_string(config.smallBlind));
+        
+        bigBlindPlayer->addToInFor(config.bigBlind);
         table->setCurrentBet(config.bigBlind);
+        
+        // Record big blind using base class method
+        recordPlayerAction(HandHistoryRound::PRE_HAND, bigBlindPlayer->getPlayerId(),
+                          ActionType::POST_BLIND, config.bigBlind,
+                          "posts big blind $" + std::to_string(config.bigBlind));
+        
         std::cout << smallBlindPlayer->getName() << " posts SB $" << config.smallBlind 
                   << ", " << bigBlindPlayer->getName() << " posts BB $" << config.bigBlind << std::endl;
     }
 }
 
-void TexasHoldem::startBettingRound(BettingRound round) {
-    currentRound = round;
-    resetBettingState();
-    
-    int dealerPos = table->getDealerPosition();
-    int playerCount = table->getPlayerCount();
-    
-    hasActedThisRound.assign(playerCount, false);
-    
-    if (round == BettingRound::PRE_FLOP) {
-        currentPlayerIndex = (dealerPos + 3) % playerCount;
-    } else {
-        currentPlayerIndex = (dealerPos + 1) % playerCount;
-    }
-    
-    currentPlayerIndex = getNextActivePlayer(currentPlayerIndex - 1);
-}
 
 void TexasHoldem::nextPhase() {
-    if (isBettingComplete()) {
-        table->collectBets();
-        
-        switch (currentRound) {
-            case BettingRound::PRE_FLOP:
-                if (countActivePlayers() > 1) {
-                    std::cout << "\n=== FLOP ===" << std::endl;
-                    table->dealFlop();
-                    if (!allRemainingPlayersAllIn()) {
-                        if (isActionComplete()) {
-                            std::cout << "ACTION COMPLETE - NO FURTHER BETTING" << std::endl;
-                        }
-                        startBettingRound(BettingRound::FLOP);
-                    } else {
-                        std::cout << "ACTION COMPLETE - NO FURTHER BETTING" << std::endl;
-                        std::cout << "\n=== TURN ===" << std::endl;
-                        table->dealTurn();
-                        std::cout << "\n=== RIVER ===" << std::endl;
-                        table->dealRiver();
-                        currentRound = BettingRound::SHOWDOWN;
-                    }
-                } else {
-                    currentRound = BettingRound::SHOWDOWN;
-                }
-                break;
-            case BettingRound::FLOP:
-                if (countActivePlayers() > 1) {
-                    std::cout << "\n=== TURN ===" << std::endl;
-                    table->dealTurn();
-                    if (!allRemainingPlayersAllIn()) {
-                        if (isActionComplete()) {
-                            std::cout << "ACTION COMPLETE - NO FURTHER BETTING" << std::endl;
-                        }
-                        startBettingRound(BettingRound::TURN);
-                    } else {
-                        std::cout << "ACTION COMPLETE - NO FURTHER BETTING" << std::endl;
-                        std::cout << "\n=== RIVER ===" << std::endl;
-                        table->dealRiver();
-                        currentRound = BettingRound::SHOWDOWN;
-                    }
-                } else {
-                    currentRound = BettingRound::SHOWDOWN;
-                }
-                break;
-            case BettingRound::TURN:
-                if (countActivePlayers() > 1) {
-                    std::cout << "\n=== RIVER ===" << std::endl;
-                    table->dealRiver();
-                    if (!allRemainingPlayersAllIn()) {
-                        if (isActionComplete()) {
-                            std::cout << "ACTION COMPLETE - NO FURTHER BETTING" << std::endl;
-                        }
-                        startBettingRound(BettingRound::RIVER);
-                    } else {
-                        std::cout << "ACTION COMPLETE - NO FURTHER BETTING" << std::endl;
-                        currentRound = BettingRound::SHOWDOWN;
-                    }
-                } else {
-                    currentRound = BettingRound::SHOWDOWN;
-                }
-                break;
-            case BettingRound::RIVER:
-                currentRound = BettingRound::SHOWDOWN;
-                break;
-            case BettingRound::SHOWDOWN:
-                break;
-        }
-        
-        if (currentRound == BettingRound::SHOWDOWN) {
-            conductShowdown();
-        }
+    resetBettingRound();
+    
+    if (currentRound == BettingRound::PRE_FLOP) {
+        currentRound = BettingRound::FLOP;
+    } else if (currentRound == BettingRound::FLOP) {
+        currentRound = BettingRound::TURN;
+    } else if (currentRound == BettingRound::TURN) {
+        currentRound = BettingRound::RIVER;
+    } else if (currentRound == BettingRound::RIVER) {
+        currentRound = BettingRound::SHOWDOWN;
     }
-}
-
-// Simplified implementations for the basic functionality
-void TexasHoldem::autoCompleteCurrentBettingRound() {
-    // Basic auto-complete - everyone calls or checks
-    int actionCount = 0;
-    while (!isBettingComplete() && actionCount < 4) {
-        int playerIndex = currentPlayerIndex;
-        if (playerIndex != -1 && canPlayerAct(playerIndex)) {
-            if (table->getCurrentBet() > 0) {
-                Player* player = table->getPlayer(playerIndex);
-                if (player->getCurrentBet() < table->getCurrentBet()) {
-                    int callAmount = table->getCurrentBet() - player->getCurrentBet();
-                    if (callAmount >= player->getChips() && player->getChips() <= 200) {
-                        playerFold(playerIndex);
-                    } else {
-                        playerCall(playerIndex);
-                    }
-                } else {
-                    playerCheck(playerIndex);
-                }
-            } else {
-                playerCheck(playerIndex);
+    
+    // Set next player to act (first player after dealer for post-flop)
+    if (currentRound != BettingRound::SHOWDOWN) {
+        int dealerPos = table->getDealerPosition();
+        int playerCount = table->getPlayerCount();
+        currentPlayerIndex = (dealerPos + 1) % playerCount;
+        
+        // Find first active player
+        int startIndex = currentPlayerIndex;
+        while (true) {
+            Player* player = table->getPlayer(currentPlayerIndex);
+            if (player && !player->hasFolded() && !player->isAllIn()) {
+                break;
             }
-            actionCount++;
-        } else {
-            break;
+            currentPlayerIndex = (currentPlayerIndex + 1) % playerCount;
+            if (currentPlayerIndex == startIndex) {
+                currentPlayerIndex = -1; // No active players
+                break;
+            }
         }
     }
-}
-
-bool TexasHoldem::canPlayerAct(int playerIndex) const {
-    Player* player = table->getPlayer(playerIndex);
-    return player && !player->hasFolded() && !player->isAllIn() && playerIndex == currentPlayerIndex;
 }
 
 BettingRound TexasHoldem::getCurrentRound() const {
     return currentRound;
-}
-
-// Placeholder implementations for other methods - we can implement these fully later
-void TexasHoldem::advanceToNextPlayer() {}
-bool TexasHoldem::isBettingComplete() const { return true; }
-bool TexasHoldem::allPlayersActed() const { return true; }
-bool TexasHoldem::allPlayersActedThisRound() const { return true; }
-int TexasHoldem::countActivePlayers() const { return table->getPlayerCount(); }
-bool TexasHoldem::allRemainingPlayersAllIn() const { return false; }
-bool TexasHoldem::isActionComplete() const { return false; }
-int TexasHoldem::getNextActivePlayer(int startIndex) const { (void)startIndex; return 0; }
-void TexasHoldem::resetBettingState() {} 
+} 

@@ -27,7 +27,7 @@ public:
     void dealInitialCards() override;
     void runBettingRounds() override;
     void conductShowdown() override;
-    bool isHandComplete() const override;
+    bool atShowdown() const override;
     
     // Stud specific methods
     void collectAntes();

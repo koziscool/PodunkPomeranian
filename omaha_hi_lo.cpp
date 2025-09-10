@@ -6,13 +6,24 @@
 OmahaHiLo::OmahaHiLo(Table* gameTable) 
     : PokerGame(gameTable, VariantConfig(PokerVariant::OMAHA_HI_LO, 10, 20)), 
       config(PokerVariant::OMAHA_HI_LO, 10, 20),
-      currentRound(OmahaBettingRound::PRE_FLOP), bettingComplete(false), currentPlayerIndex(0) {
+      currentRound(OmahaBettingRound::PRE_FLOP), bettingComplete(false), currentPlayerIndex(0),
+      handHistory(PokerVariant::OMAHA_HI_LO, 1) {
 }
 
 void OmahaHiLo::startNewHand() {
     currentRound = OmahaBettingRound::PRE_FLOP;
     bettingComplete = false;
     hasActedThisRound.assign(table->getPlayerCount(), false);
+    
+    // Initialize hand history with players
+    handHistory = HandHistory(PokerVariant::OMAHA_HI_LO, 1);
+    for (int i = 0; i < table->getPlayerCount(); i++) {
+        Player* player = table->getPlayer(i);
+        if (player) {
+            bool isDealer = (i == table->getDealerPosition());
+            handHistory.addPlayer(player->getPlayerId(), player->getName(), i, player->getChips(), isDealer);
+        }
+    }
     
     // Deal 4 hole cards to each player
     dealInitialCards();
@@ -54,8 +65,20 @@ void OmahaHiLo::postBlinds() {
     if (smallBlindPlayer && bigBlindPlayer) {
         smallBlindPlayer->addToInFor(config.smallBlind);
         table->setCurrentBet(config.smallBlind);
+        
+        // Record small blind in hand history
+        handHistory.recordAction(HandHistoryRound::PRE_HAND, smallBlindPlayer->getPlayerId(),
+                                ActionType::POST_BLIND, config.smallBlind, config.smallBlind,
+                                "posts small blind $" + std::to_string(config.smallBlind));
+        
         bigBlindPlayer->addToInFor(config.bigBlind);
         table->setCurrentBet(config.bigBlind);
+        
+        // Record big blind in hand history  
+        handHistory.recordAction(HandHistoryRound::PRE_HAND, bigBlindPlayer->getPlayerId(),
+                                ActionType::POST_BLIND, config.bigBlind, config.bigBlind,
+                                "posts big blind $" + std::to_string(config.bigBlind));
+        
         std::cout << smallBlindPlayer->getName() << " posts SB $" << config.smallBlind 
                   << ", " << bigBlindPlayer->getName() << " posts BB $" << config.bigBlind << std::endl;
         
@@ -115,47 +138,76 @@ void OmahaHiLo::showOmahaGameState() {
 }
 
 void OmahaHiLo::autoCompleteCurrentBettingRound() {
-    // Basic auto-complete - everyone calls or checks (same as Hold'em)
     int actionCount = 0;
-    while (!isBettingComplete() && actionCount < 10) { // Increased limit for safety
+    const int MAX_ACTIONS = 20; // Safety limit
+    
+    while (!isBettingComplete() && actionCount < MAX_ACTIONS) {
         int playerIndex = currentPlayerIndex;
         
-        if (playerIndex != -1 && canPlayerAct(playerIndex)) {
-            Player* player = table->getPlayer(playerIndex);
-            int currentBet = table->getCurrentBet();
-            
-            if (currentBet > 0) {
-                if (player->getInFor() < currentBet) {
-                    // Player needs to call (put in more money)
-                    int callAmount = currentBet - player->getInFor();
-                    if (callAmount >= player->getChips() && player->getChips() <= 200) {
-                        playerFold(playerIndex);
-                    } else {
-                        playerCall(playerIndex);
-                    }
-                } else {
-                    // Player is already matched - can check or raise (blind option)
-                    // Let's have Diana (big blind) raise to test the raise logic
-                    if (playerIndex == 3) { // Diana
-                        playerRaise(playerIndex, currentBet * 2); // Raise to 2x current bet
-                    } else {
-                        playerCheck(playerIndex);
-                    }
-                }
-            } else {
-                // No current bet - everyone can check
-                playerCheck(playerIndex);
-            }
-            
-            // Mark player as having acted on their hand
-            hasActedThisRound[playerIndex] = true;
-            
-            // Advance to next player
-            advanceToNextPlayer();
-            actionCount++;
-        } else {
+        if (playerIndex == -1 || !canPlayerAct(playerIndex)) {
             break;
         }
+        
+        Player* player = table->getPlayer(playerIndex);
+        if (!player) {
+            break;
+        }
+        
+        int currentBet = table->getCurrentBet();
+        int callAmount = currentBet - player->getInFor();
+        bool canCheck = (callAmount <= 0);
+        
+        // Use player's decision-making AI
+        HandHistoryRound historyRound;
+        switch (currentRound) {
+            case OmahaBettingRound::PRE_FLOP: historyRound = HandHistoryRound::PRE_FLOP; break;
+            case OmahaBettingRound::FLOP: historyRound = HandHistoryRound::FLOP; break;
+            case OmahaBettingRound::TURN: historyRound = HandHistoryRound::TURN; break;
+            case OmahaBettingRound::RIVER: historyRound = HandHistoryRound::RIVER; break;
+            default: historyRound = HandHistoryRound::PRE_FLOP; break;
+        }
+        
+        PlayerAction decision = player->makeDecision(handHistory, callAmount, canCheck);
+        
+        // Execute the player's decision
+        std::string actionDesc;
+        switch (decision) {
+            case PlayerAction::FOLD:
+                playerFold(playerIndex);
+                actionDesc = "folds";
+                break;
+            case PlayerAction::CHECK:
+                playerCheck(playerIndex);
+                actionDesc = "checks";
+                break;
+            case PlayerAction::CALL:
+                playerCall(playerIndex);
+                actionDesc = "calls $" + std::to_string(callAmount);
+                break;
+            case PlayerAction::RAISE: {
+                int raiseAmount = player->calculateRaiseAmount(handHistory, currentBet);
+                playerRaise(playerIndex, raiseAmount);
+                actionDesc = "raises to $" + std::to_string(raiseAmount);
+                break;
+            }
+            case PlayerAction::ALL_IN:
+                playerAllIn(playerIndex);
+                actionDesc = "goes all-in for $" + std::to_string(player->getChips());
+                break;
+        }
+        
+        // Record the action in hand history
+        handHistory.recordAction(historyRound, player->getPlayerId(), 
+                                static_cast<ActionType>(decision), 
+                                (decision == PlayerAction::RAISE) ? player->calculateRaiseAmount(handHistory, currentBet) : callAmount,
+                                table->getCurrentBet(), actionDesc);
+        
+        // Mark player as having acted
+        hasActedThisRound[playerIndex] = true;
+        
+        // Advance to next player
+        advanceToNextPlayer();
+        actionCount++;
     }
     
     // Collect the inFor amounts to pots
@@ -199,7 +251,7 @@ void OmahaHiLo::conductShowdown() {
     awardPotsStaged();
 }
 
-bool OmahaHiLo::isHandComplete() const {
+bool OmahaHiLo::atShowdown() const {
     return currentRound == OmahaBettingRound::SHOWDOWN;
 }
 

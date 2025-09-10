@@ -5,6 +5,16 @@
 #include <vector>
 #include <string>
 #include <iomanip>
+#include <random>
+
+class HandHistory; // Forward declaration
+
+enum class PlayerPersonality {
+    TIGHT_PASSIVE,   // Plays few hands, rarely raises
+    TIGHT_AGGRESSIVE, // Plays few hands, bets/raises with good hands
+    LOOSE_PASSIVE,   // Plays many hands, calls frequently  
+    LOOSE_AGGRESSIVE // Plays many hands, bets/raises frequently
+};
 
 enum class PlayerAction {
     FOLD,
@@ -24,13 +34,18 @@ private:
     int inFor; // Chips committed to pot during current betting round
     bool folded;
     bool allIn;
+    PlayerPersonality personality;
+    int playerId; // Stable identifier for hand history tracking
+    mutable std::mt19937 rng; // For decision randomness
 
 public:
-    Player(const std::string& playerName, int startingChips);
+    Player(const std::string& playerName, int startingChips, int id, 
+           PlayerPersonality playerPersonality = PlayerPersonality::TIGHT_PASSIVE);
     
     // Getters
     const std::string& getName() const;
     int getChips() const;
+    int getPlayerId() const;
     const std::vector<Card>& getHand() const;
     int getCurrentBet() const;
     int getInFor() const; // Get chips committed to pot this round
@@ -59,6 +74,10 @@ public:
     PlayerAction raise(int raiseAmount);
     PlayerAction goAllIn();
     
+    // Decision making - the main interface for AI players
+    PlayerAction makeDecision(const HandHistory& history, int callAmount, bool canCheck = false) const;
+    int calculateRaiseAmount(const HandHistory& history, int currentBet) const;
+    
     // Game state management
     void resetBet();
     void setBet(int amount);
@@ -66,6 +85,14 @@ public:
     void resetInFor(); // Reset inFor to 0 at end of betting round
     void resetForNewHand();
     void showStatus(bool showCards = false) const;
+    
+private:
+    // Decision helpers
+    double evaluateHandStrength() const;
+    double calculatePotOdds(int callAmount, int potSize) const;
+    bool shouldFoldToAggression(const HandHistory& history, int callAmount) const;
+    bool shouldBluff(const HandHistory& history) const;
+    bool isHandPlayable() const; // Basic preflop hand selection
 };
 
 #endif 

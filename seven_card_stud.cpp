@@ -33,11 +33,28 @@ void SevenCardStud::runBettingRounds() {
     // Determine and announce bring-in after showing cards
     determineBringInPlayer();
     
-    // Complete all betting rounds
+    // Set the bring-in player as the current player for third street
+    currentPlayerIndex = bringInPlayer;
+    
+    // Handle bring-in first on third street
+    if (bringInPlayer != -1 && currentPlayerIndex == bringInPlayer && !hasActedThisRound[bringInPlayer]) {
+        playerBringIn(bringInPlayer);
+    }
+    
+    // Complete all betting rounds using base class method
     while (!isHandComplete()) {
-        if (!isHandComplete() && currentPlayerIndex != -1) {
-            autoCompleteCurrentBettingRound();
+        if (currentRound == StudRound::THIRD_STREET) {
+            completeBettingRound(HandHistoryRound::PRE_FLOP);
+        } else if (currentRound == StudRound::FOURTH_STREET) {
+            completeBettingRound(HandHistoryRound::FLOP);
+        } else if (currentRound == StudRound::FIFTH_STREET) {
+            completeBettingRound(HandHistoryRound::TURN);
+        } else if (currentRound == StudRound::SIXTH_STREET) {
+            completeBettingRound(HandHistoryRound::RIVER);
+        } else if (currentRound == StudRound::SEVENTH_STREET) {
+            completeBettingRound(HandHistoryRound::RIVER);
         }
+        
         if (!isHandComplete()) {
             nextStreet();
         }
@@ -61,8 +78,8 @@ void SevenCardStud::conductShowdown() {
     awardPotsStaged();
 }
 
-bool SevenCardStud::isHandComplete() const {
-    return currentRound == StudRound::SHOWDOWN || countActivePlayers() <= 1;
+bool SevenCardStud::atShowdown() const {
+    return currentRound == StudRound::SHOWDOWN;
 }
 
 void SevenCardStud::collectAntes() {
@@ -158,13 +175,11 @@ void SevenCardStud::determineBringInPlayer() {
 
 void SevenCardStud::startBettingRound(StudRound round) {
     currentRound = round;
-    resetBettingState();
-    
-    hasActedThisRound.assign(table->getPlayerCount(), false);
+    resetBettingRound(); // Use base class method
     
     if (round == StudRound::THIRD_STREET) {
-        // For third street, current player will be set after bring-in is determined
-        currentPlayerIndex = 0; // Temporary - will be updated in runBettingRounds
+        // For third street, current player is the bring-in player (set in runBettingRounds)
+        // Don't set currentPlayerIndex here - it's set after determineBringInPlayer
     } else {
         // On later streets, player with highest showing hand acts first
         currentPlayerIndex = findHighestShowingHand();
@@ -204,10 +219,6 @@ void SevenCardStud::nextStreet() {
                     dealFourthStreet();
                     showStudGameState();
                     startBettingRound(StudRound::FOURTH_STREET);
-                    // Run betting for fourth street - but check if anyone can act first
-                    if (currentPlayerIndex != -1) {
-                        autoCompleteCurrentBettingRound();
-                    }
                 } else {
                     currentRound = StudRound::SHOWDOWN;
                 }
@@ -218,10 +229,6 @@ void SevenCardStud::nextStreet() {
                     dealFifthStreet();
                     showStudGameState();
                     startBettingRound(StudRound::FIFTH_STREET);
-                    // Run betting for fifth street
-                    if (currentPlayerIndex != -1) {
-                        autoCompleteCurrentBettingRound();
-                    }
                 } else {
                     currentRound = StudRound::SHOWDOWN;
                 }
@@ -232,10 +239,6 @@ void SevenCardStud::nextStreet() {
                     dealSixthStreet();
                     showStudGameState();
                     startBettingRound(StudRound::SIXTH_STREET);
-                    // Run betting for sixth street
-                    if (currentPlayerIndex != -1) {
-                        autoCompleteCurrentBettingRound();
-                    }
                 } else {
                     currentRound = StudRound::SHOWDOWN;
                 }
@@ -257,10 +260,6 @@ void SevenCardStud::nextStreet() {
                     table->showPotBreakdown();
                     std::cout << std::endl; // Add blank line after pot breakdown
                     startBettingRound(StudRound::SEVENTH_STREET);
-                    // Run betting for seventh street
-                    if (currentPlayerIndex != -1) {
-                        autoCompleteCurrentBettingRound();
-                    }
                 } else {
                     currentRound = StudRound::SHOWDOWN;
                 }

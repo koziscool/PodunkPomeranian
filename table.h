@@ -20,7 +20,7 @@ public:
     Table();
     
     // Player management
-    void addPlayer(const std::string& name, int chips);
+    void addPlayer(const std::string& name, int chips, int playerId, PlayerPersonality personality = PlayerPersonality::TIGHT_PASSIVE);
     Player* getPlayer(int index);
     const Player* getPlayer(int index) const;
     int getPlayerCount() const;

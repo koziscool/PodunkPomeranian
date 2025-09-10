@@ -7,8 +7,8 @@ Table::Table() : dealerPosition(0), currentBet(0) {
     deck.shuffle();
 }
 
-void Table::addPlayer(const std::string& name, int chips) {
-    players.push_back(std::make_unique<Player>(name, chips));
+void Table::addPlayer(const std::string& name, int chips, int playerId, PlayerPersonality personality) {
+    players.push_back(std::make_unique<Player>(name, chips, playerId, personality));
 }
 
 Player* Table::getPlayer(int index) {

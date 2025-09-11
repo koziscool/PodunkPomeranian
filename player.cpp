@@ -238,20 +238,34 @@ PlayerAction Player::makeDecision(const HandHistory& history, int callAmount, bo
         
         // Call or raise based on hand strength and personality
         if (handStrength > 0.7) {
-            // Strong hand - consider raising
+            // Strong hand - almost always raise for aggressive players
             if (personality == PlayerPersonality::TIGHT_AGGRESSIVE || 
                 personality == PlayerPersonality::LOOSE_AGGRESSIVE) {
                 
                 std::uniform_real_distribution<double> dist(0.0, 1.0);
-                if (dist(rng) < 0.6) { // 60% chance to raise with strong hand
+                if (dist(rng) < 0.8) { // 80% chance to raise with strong hand
                     return PlayerAction::RAISE;
                 }
             }
             return callAmount > 0 ? PlayerAction::CALL : PlayerAction::CHECK;
         }
         
-        // Medium strength hands
-        if (handStrength > 0.4) {
+        // Medium strength hands - be more aggressive
+        if (handStrength > 0.5) {
+            // Sometimes raise with medium-good hands
+            if (personality == PlayerPersonality::LOOSE_AGGRESSIVE) {
+                std::uniform_real_distribution<double> dist(0.0, 1.0);
+                if (dist(rng) < 0.4 && callAmount == 0) { // 40% chance to bet when checking is free
+                    return PlayerAction::RAISE;
+                }
+            }
+            if (callAmount == 0) return PlayerAction::CHECK;
+            if (potOdds > 0.25) return PlayerAction::CALL;
+            return PlayerAction::FOLD;
+        }
+        
+        // Playable hands
+        if (handStrength > 0.3) {
             if (callAmount == 0) return PlayerAction::CHECK;
             if (potOdds > 0.3) return PlayerAction::CALL;
             return PlayerAction::FOLD;
@@ -262,17 +276,42 @@ PlayerAction Player::makeDecision(const HandHistory& history, int callAmount, bo
         return PlayerAction::FOLD;
     }
     
-    // Post-flop decision making (simplified)
+    // Post-flop decision making (more aggressive)
     if (shouldFoldToAggression(history, callAmount)) {
         return PlayerAction::FOLD;
     }
     
-    if (handStrength > 0.8 && shouldBluff(history)) {
-        return PlayerAction::RAISE;
+    // Very strong hands - bet/raise aggressively
+    if (handStrength > 0.8) {
+        if (personality == PlayerPersonality::TIGHT_AGGRESSIVE || 
+            personality == PlayerPersonality::LOOSE_AGGRESSIVE) {
+            std::uniform_real_distribution<double> dist(0.0, 1.0);
+            if (dist(rng) < 0.7) { // 70% chance to raise
+                return PlayerAction::RAISE;
+            }
+        }
+        return callAmount > 0 ? PlayerAction::CALL : PlayerAction::CHECK;
     }
     
-    if (handStrength > 0.5 || potOdds > 0.25) {
+    // Good hands - value bet or call
+    if (handStrength > 0.6) {
+        if (callAmount == 0 && personality == PlayerPersonality::LOOSE_AGGRESSIVE) {
+            std::uniform_real_distribution<double> dist(0.0, 1.0);
+            if (dist(rng) < 0.5) { // 50% chance to bet for value
+                return PlayerAction::RAISE;
+            }
+        }
         return callAmount > 0 ? PlayerAction::CALL : PlayerAction::CHECK;
+    }
+    
+    // Medium hands 
+    if (handStrength > 0.4 || potOdds > 0.25) {
+        return callAmount > 0 ? PlayerAction::CALL : PlayerAction::CHECK;
+    }
+    
+    // Bluff occasionally with weak hands
+    if (callAmount == 0 && shouldBluff(history)) {
+        return PlayerAction::RAISE;
     }
     
     if (canCheck) {
@@ -376,6 +415,11 @@ double Player::calculatePotOdds(int callAmount, int potSize) const {
 }
 
 bool Player::shouldFoldToAggression(const HandHistory& history, int callAmount) const {
+    // Never fold when we can check for free
+    if (callAmount == 0) {
+        return false;
+    }
+    
     // Check if there was recent aggressive action
     auto recentActions = history.getActionsForRound(history.getCurrentRound());
     

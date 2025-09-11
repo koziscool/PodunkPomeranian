@@ -14,7 +14,7 @@ void PokerGame::showGameState() const {
     table->showTable();
 }
 
-std::vector<int> PokerGame::findWinners(const std::vector<int>& eligiblePlayers) const {
+std::vector<int> PokerGame::findWinners(const std::vector<int>& eligiblePlayers) {
     // Delegate to the new findBestHand method
     return findBestHand(eligiblePlayers);
 }
@@ -151,7 +151,13 @@ void PokerGame::awardPot(int potAmount, const std::vector<int>& eligiblePlayers)
     
     std::vector<int> winners = findBestHand(eligiblePlayers);
     displayWinningHands(winners, eligiblePlayers);
-    transferPotToWinners(potAmount, winners);
+    
+    // Use Hi-Lo specific pot transfer for Hi-Lo games
+    if (variantInfo.potResolution == POTRESOLUTION_HILO_A5_MUSTQUALIFY) {
+        transferHiLoPotsToWinners(potAmount);
+    } else {
+        transferPotToWinners(potAmount, winners);
+    }
 }
 
 void PokerGame::transferPotToWinners(int potAmount, const std::vector<int>& winners) {
@@ -179,12 +185,88 @@ void PokerGame::transferPotToWinners(int potAmount, const std::vector<int>& winn
     }
 }
 
+void PokerGame::transferHiLoPotsToWinners(int potAmount) {
+    if (hiWinners.empty() && loWinners.empty()) {
+        std::cout << "No winners found for Hi-Lo pot!" << std::endl;
+        return;
+    }
+    
+    // Track if this is a chopped pot
+    if (hiWinners.size() > 1 || loWinners.size() > 1 || (!loWinners.empty() && !hiWinners.empty())) {
+        currentHandHasChoppedPot = true;
+    }
+    
+    int totalAwarded = 0;
+    
+    if (loWinners.empty()) {
+        // No qualifying low - all money goes to high winners
+        std::cout << "No qualifying low hand - full pot goes to high" << std::endl;
+        int amountPerHiWinner = potAmount / static_cast<int>(hiWinners.size());
+        int remainder = potAmount % static_cast<int>(hiWinners.size());
+        
+        for (size_t i = 0; i < hiWinners.size(); i++) {
+            Player* winner = table->getPlayer(hiWinners[i]);
+            if (winner) {
+                int award = amountPerHiWinner + (i < static_cast<size_t>(remainder) ? 1 : 0);
+                winner->addChips(award);
+                totalAwarded += award;
+                std::cout << winner->getName() << " wins $" << award << " (high)" << std::endl;
+            }
+        }
+    } else {
+        // Split pot between high and low
+        int hiHalf = potAmount / 2;
+        int loHalf = potAmount - hiHalf;  // Handle odd amounts
+        
+        // Award high half
+        if (!hiWinners.empty()) {
+            int amountPerHiWinner = hiHalf / static_cast<int>(hiWinners.size());
+            int hiRemainder = hiHalf % static_cast<int>(hiWinners.size());
+            
+            for (size_t i = 0; i < hiWinners.size(); i++) {
+                Player* winner = table->getPlayer(hiWinners[i]);
+                if (winner) {
+                    int award = amountPerHiWinner + (i < static_cast<size_t>(hiRemainder) ? 1 : 0);
+                    winner->addChips(award);
+                    totalAwarded += award;
+                    std::cout << winner->getName() << " wins $" << award << " (high)" << std::endl;
+                }
+            }
+        }
+        
+        // Award low half
+        int amountPerLoWinner = loHalf / static_cast<int>(loWinners.size());
+        int loRemainder = loHalf % static_cast<int>(loWinners.size());
+        
+        for (size_t i = 0; i < loWinners.size(); i++) {
+            Player* winner = table->getPlayer(loWinners[i]);
+            if (winner) {
+                int award = amountPerLoWinner + (i < static_cast<size_t>(loRemainder) ? 1 : 0);
+                winner->addChips(award);
+                totalAwarded += award;
+                std::cout << winner->getName() << " wins $" << award << " (low)" << std::endl;
+            }
+        }
+    }
+    
+    // Verify we awarded exactly the pot amount
+    if (totalAwarded != potAmount) {
+        std::cout << "ERROR: Pot awarding mismatch! Pot: $" << potAmount << ", Awarded: $" << totalAwarded << std::endl;
+    }
+}
+
 // Utility functions for showdown
-std::vector<int> PokerGame::findBestHand(const std::vector<int>& eligiblePlayers) const {
+std::vector<int> PokerGame::findBestHand(const std::vector<int>& eligiblePlayers) {
     if (eligiblePlayers.empty()) {
         return {};
     }
     
+    // Check if this is a hi-lo split pot variant
+    if (variantInfo.potResolution == POTRESOLUTION_HILO_A5_MUSTQUALIFY) {
+        return findHiLoWinners(eligiblePlayers);
+    }
+    
+    // Standard high-only pot logic
     HandResult bestHand;
     bestHand.rank = HandRank::HIGH_CARD;
     std::vector<int> winners;
@@ -217,13 +299,27 @@ std::vector<int> PokerGame::findBestHand(const std::vector<int>& eligiblePlayers
 }
 
 void PokerGame::displayWinningHands(const std::vector<int>& winners, const std::vector<int>& eligiblePlayers) const {
+    // Check if this is a hi-lo split pot variant
+    if (variantInfo.potResolution == POTRESOLUTION_HILO_A5_MUSTQUALIFY) {
+        displayHiLoWinningHands(winners, eligiblePlayers);
+        return;
+    }
+    
+    // Standard high-only display
     for (int playerIndex : eligiblePlayers) {
         Player* player = table->getPlayer(playerIndex);
         if (player && !player->hasFolded()) {
-            HandResult hand = HandEvaluator::evaluateHand(
-                player->getHand(), 
-                table->getCommunityCards()
-            );
+            HandResult hand;
+            
+            // Use appropriate hand evaluation based on variant (same as findBestHand)
+            if (variantInfo.handResolution == BESTHANDRESOLUTION_TWOPLUSTHREE) {
+                // Omaha: must use exactly 2 hole + 3 community
+                hand = evaluateOmahaHand(player->getHand(), table->getCommunityCards());
+                
+            } else {
+                // Hold'em/Stud: use any 5 cards
+                hand = HandEvaluator::evaluateHand(player->getHand(), table->getCommunityCards());
+            }
             
             bool isWinner = std::find(winners.begin(), winners.end(), playerIndex) != winners.end();
             std::cout << player->getName() << ": " << hand.description;
@@ -282,7 +378,6 @@ bool PokerGame::isBettingComplete() const {
             }
             // If player's inFor amount doesn't match current bet, betting isn't complete
             if (player->getInFor() < currentBet) {
-                std::cout << "DEBUG: Player " << i << " (" << player->getName() << ") inFor=" << player->getInFor() << " < currentBet=" << currentBet << std::endl;
                 return false;
             }
         }
@@ -699,10 +794,10 @@ void PokerGame::nextRound() {
     
     // Set first to act (different for BOARD vs STUD)
     if (variantInfo.gameStruct == GAMESTRUCTURE_BOARD) {
-        // First active player after small blind
+        // Post-flop: first active player after dealer button
         int dealerPos = table->getDealerPosition();
-        currentPlayerIndex = (dealerPos + 1) % table->getPlayerCount();
-        advanceToNextPlayer(); // Find first active player
+        currentPlayerIndex = dealerPos; // Start at dealer
+        advanceToNextPlayer(); // Find first active player after dealer
     } else {
         // For stud, highest up cards act first (simplified: just use first active player)
         currentPlayerIndex = 0;
@@ -758,6 +853,8 @@ HandResult PokerGame::evaluateOmahaHand(const std::vector<Card>& holeCards, cons
                         
                         if (result > bestHand) {
                             bestHand = result;
+                            // Ensure the bestHand field contains the actual 5 cards used
+                            bestHand.bestHand = fiveCards;
                         }
                     }
                 }
@@ -766,4 +863,262 @@ HandResult PokerGame::evaluateOmahaHand(const std::vector<Card>& holeCards, cons
     }
     
     return bestHand;
+}
+
+LowHandResult PokerGame::evaluateOmahaLowHand(const std::vector<Card>& holeCards, const std::vector<Card>& communityCards) const {
+    if (holeCards.size() != 4 || communityCards.size() != 5) {
+        return LO_HAND_UNQUALIFIED;
+    }
+    
+    LowHandResult bestLow = LO_HAND_UNQUALIFIED;
+    
+    // Generate all combinations of exactly 2 hole cards and 3 community cards
+    for (int h1 = 0; h1 < 4; h1++) {
+        for (int h2 = h1 + 1; h2 < 4; h2++) {
+            for (int c1 = 0; c1 < 5; c1++) {
+                for (int c2 = c1 + 1; c2 < 5; c2++) {
+                    for (int c3 = c2 + 1; c3 < 5; c3++) {
+                        std::vector<Card> fiveCards = {
+                            holeCards[h1], holeCards[h2],
+                            communityCards[c1], communityCards[c2], communityCards[c3]
+                        };
+                        
+                        LowHandResult result = HandEvaluator::evaluate5CardsForLowA5(fiveCards);
+                        
+                        // Since we're using LO_HAND_UNQUALIFIED constant, we can compare directly
+                        if (result < bestLow) {
+                            bestLow = result;
+                            // Ensure the bestLowHand field contains the actual 5 cards used
+                            if (result.qualified) {
+                                bestLow.bestLowHand = fiveCards;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    return bestLow;
+}
+
+std::vector<int> PokerGame::findHiLoWinners(const std::vector<int>& eligiblePlayers) {
+    if (eligiblePlayers.empty()) {
+        return {};
+    }
+    
+    // Find high hand winners
+    HandResult bestHighHand;
+    bestHighHand.rank = HandRank::HIGH_CARD;
+    std::vector<int> highWinners;
+    
+    // Find low hand winners
+    LowHandResult bestLowHand = LO_HAND_UNQUALIFIED;
+    std::vector<int> lowWinners;
+    
+    // Evaluate all eligible players for both high and low
+    for (int playerIndex : eligiblePlayers) {
+        Player* player = table->getPlayer(playerIndex);
+        if (player && !player->hasFolded()) {
+            
+            // Evaluate high hand
+            HandResult highHand;
+            if (variantInfo.handResolution == BESTHANDRESOLUTION_TWOPLUSTHREE) {
+                // Omaha: must use exactly 2 hole + 3 community
+                highHand = evaluateOmahaHand(player->getHand(), table->getCommunityCards());
+            } else {
+                // Hold'em/Stud: use any 5 cards
+                highHand = HandEvaluator::evaluateHand(player->getHand(), table->getCommunityCards());
+            }
+            
+            if (highHand > bestHighHand) {
+                bestHighHand = highHand;
+                highWinners.clear();
+                highWinners.push_back(playerIndex);
+            } else if (highHand == bestHighHand) {
+                highWinners.push_back(playerIndex);
+            }
+            
+            // Evaluate low hand
+            LowHandResult lowHand;
+            if (variantInfo.handResolution == BESTHANDRESOLUTION_TWOPLUSTHREE) {
+                // Omaha: must use exactly 2 hole + 3 community for low
+                lowHand = evaluateOmahaLowHand(player->getHand(), table->getCommunityCards());
+            } else {
+                // Hold'em/Stud: use any 5 cards for low
+                lowHand = HandEvaluator::evaluateLowHand(player->getHand(), table->getCommunityCards());
+            }
+            
+            // Apply 8-or-better qualification for HILO_A5_MUSTQUALIFY games
+            if (variantInfo.potResolution == POTRESOLUTION_HILO_A5_MUSTQUALIFY) {
+                // Check if hand qualifies: no pairs AND highest card is 8 or lower
+                bool hasNoPairs = (lowHand.values.size() >= 6 && lowHand.values[0] == 0); // handType == 0
+                bool highCardIsEightOrLower = (lowHand.values.size() >= 6 && lowHand.values[1] <= 8); // highest card <= 8
+                
+                if (!hasNoPairs || !highCardIsEightOrLower) {
+                    lowHand = LO_HAND_UNQUALIFIED; // Hand doesn't qualify for low
+                }
+            }
+            
+            // With LO_HAND_UNQUALIFIED, we can simply compare all low hands
+            if (lowHand < bestLowHand) {
+                bestLowHand = lowHand;
+                lowWinners.clear();
+                lowWinners.push_back(playerIndex);
+            } else if (lowHand == bestLowHand) {
+                lowWinners.push_back(playerIndex);
+            }
+        }
+    }
+    
+    // Store both high and low winners for proper Hi-Lo pot splitting
+    // We'll handle the actual split in transferHiLoPotsToWinners
+    hiWinners = highWinners;
+    loWinners = (bestLowHand.qualified) ? lowWinners : std::vector<int>();
+    
+    // For compatibility, return combined list but actual pot splitting will use hiWinners/loWinners
+    std::vector<int> allWinners = highWinners;
+    if (bestLowHand.qualified) {
+        for (int lowWinner : lowWinners) {
+            if (std::find(allWinners.begin(), allWinners.end(), lowWinner) == allWinners.end()) {
+                allWinners.push_back(lowWinner);
+            }
+        }
+    }
+    
+    return allWinners;
+}
+
+void PokerGame::displayHiLoWinningHands(const std::vector<int>& /* winners */, const std::vector<int>& eligiblePlayers) const {
+    // Re-evaluate to determine high and low winners separately
+    HandResult bestHighHand;
+    bestHighHand.rank = HandRank::HIGH_CARD;
+    std::vector<int> highWinners;
+    
+    LowHandResult bestLowHand = LO_HAND_UNQUALIFIED;
+    std::vector<int> lowWinners;
+    
+    // Find the actual high and low winners
+    for (int playerIndex : eligiblePlayers) {
+        Player* player = table->getPlayer(playerIndex);
+        if (player && !player->hasFolded()) {
+            
+            // Evaluate high hand
+            HandResult highHand;
+            if (variantInfo.handResolution == BESTHANDRESOLUTION_TWOPLUSTHREE) {
+                highHand = evaluateOmahaHand(player->getHand(), table->getCommunityCards());
+            } else {
+                highHand = HandEvaluator::evaluateHand(player->getHand(), table->getCommunityCards());
+            }
+            
+            if (highHand > bestHighHand) {
+                bestHighHand = highHand;
+                highWinners.clear();
+                highWinners.push_back(playerIndex);
+            } else if (highHand == bestHighHand) {
+                highWinners.push_back(playerIndex);
+            }
+            
+            // Evaluate low hand
+            LowHandResult lowHand;
+            if (variantInfo.handResolution == BESTHANDRESOLUTION_TWOPLUSTHREE) {
+                lowHand = evaluateOmahaLowHand(player->getHand(), table->getCommunityCards());
+            } else {
+                lowHand = HandEvaluator::evaluateLowHand(player->getHand(), table->getCommunityCards());
+            }
+            
+            // Apply 8-or-better qualification for winner determination
+            if (variantInfo.potResolution == POTRESOLUTION_HILO_A5_MUSTQUALIFY) {
+                bool hasNoPairs = (lowHand.values.size() >= 6 && lowHand.values[0] == 0);
+                bool highCardIsEightOrLower = (lowHand.values.size() >= 6 && lowHand.values[1] <= 8);
+                
+                if (!hasNoPairs || !highCardIsEightOrLower) {
+                    lowHand = LO_HAND_UNQUALIFIED;
+                }
+            }
+            
+            // Simplified comparison using LO_HAND_UNQUALIFIED
+            if (lowHand < bestLowHand) {
+                bestLowHand = lowHand;
+                lowWinners.clear();
+                lowWinners.push_back(playerIndex);
+            } else if (lowHand == bestLowHand) {
+                lowWinners.push_back(playerIndex);
+            }
+        }
+    }
+    
+    // Display all hands with appropriate winner indicators
+    for (int playerIndex : eligiblePlayers) {
+        Player* player = table->getPlayer(playerIndex);
+        if (player && !player->hasFolded()) {
+            HandResult highHand;
+            LowHandResult lowHand;
+            
+            // Evaluate both hands for display
+            if (variantInfo.handResolution == BESTHANDRESOLUTION_TWOPLUSTHREE) {
+                highHand = evaluateOmahaHand(player->getHand(), table->getCommunityCards());
+                lowHand = evaluateOmahaLowHand(player->getHand(), table->getCommunityCards());
+            } else {
+                highHand = HandEvaluator::evaluateHand(player->getHand(), table->getCommunityCards());
+                lowHand = HandEvaluator::evaluateLowHand(player->getHand(), table->getCommunityCards());
+            }
+            
+            // Apply 8-or-better qualification for display
+            if (variantInfo.potResolution == POTRESOLUTION_HILO_A5_MUSTQUALIFY) {
+                bool hasNoPairs = (lowHand.values.size() >= 6 && lowHand.values[0] == 0);
+                bool highCardIsEightOrLower = (lowHand.values.size() >= 6 && lowHand.values[1] <= 8);
+                
+                if (!hasNoPairs || !highCardIsEightOrLower) {
+                    lowHand = LO_HAND_UNQUALIFIED;
+                }
+            }
+            
+            bool isHighWinner = std::find(highWinners.begin(), highWinners.end(), playerIndex) != highWinners.end();
+            bool isLowWinner = std::find(lowWinners.begin(), lowWinners.end(), playerIndex) != lowWinners.end();
+            
+            std::cout << player->getName() << ":" << std::endl;
+            std::cout << "  High: " << highHand.description;
+            if (isHighWinner) {
+                std::cout << " (HIGH WINNER)";
+            }
+            std::cout << std::endl;
+            
+            // Display low hand with proper qualification messaging
+            std::cout << "  Low: ";
+            if (lowHand.qualified) {
+                std::cout << lowHand.description;
+                if (isLowWinner) {
+                    std::cout << " (LOW WINNER)";
+                }
+            } else {
+                std::cout << "No qualifying low";
+            }
+            std::cout << std::endl;
+        }
+    }
+    
+    // Summary of pot split
+    if (bestLowHand.qualified) {
+        std::cout << "\n=== POT SPLIT ===\n";
+        std::cout << "High half goes to: ";
+        for (size_t i = 0; i < highWinners.size(); i++) {
+            if (i > 0) std::cout << ", ";
+            std::cout << table->getPlayer(highWinners[i])->getName();
+        }
+        std::cout << "\nLow half goes to: ";
+        for (size_t i = 0; i < lowWinners.size(); i++) {
+            if (i > 0) std::cout << ", ";
+            std::cout << table->getPlayer(lowWinners[i])->getName();
+        }
+        std::cout << std::endl;
+    } else {
+        std::cout << "\n=== NO QUALIFYING LOW ===\n";
+        std::cout << "Entire pot goes to high winners: ";
+        for (size_t i = 0; i < highWinners.size(); i++) {
+            if (i > 0) std::cout << ", ";
+            std::cout << table->getPlayer(highWinners[i])->getName();
+        }
+        std::cout << std::endl;
+    }
 }

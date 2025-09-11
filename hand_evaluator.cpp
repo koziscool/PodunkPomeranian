@@ -3,6 +3,14 @@
 #include <map>
 #include <set>
 
+// Define the unqualified low hand constant
+const LowHandResult LO_HAND_UNQUALIFIED = {
+    false,                     // qualified = false
+    {15, 15, 15, 15, 15},     // values = impossibly high values (worse than any real hand)
+    {},                        // bestLowHand = empty
+    "No qualifying low"        // description
+};
+
 bool HandResult::operator>(const HandResult& other) const {
     if (rank != other.rank) {
         return static_cast<int>(rank) > static_cast<int>(other.rank);
@@ -16,6 +24,22 @@ bool HandResult::operator<(const HandResult& other) const {
 
 bool HandResult::operator==(const HandResult& other) const {
     return rank == other.rank && values == other.values;
+}
+
+bool LowHandResult::operator<(const LowHandResult& other) const {
+    // If neither qualifies, they tie (neither is better)
+    if (!qualified && !other.qualified) return false;
+    
+    // Unqualified hands lose to qualified hands
+    if (!qualified && other.qualified) return false;  // This loses
+    if (qualified && !other.qualified) return true;   // This wins
+    
+    // Both qualify, compare values (lower is better for low hands)
+    return values < other.values;
+}
+
+bool LowHandResult::operator==(const LowHandResult& other) const {
+    return qualified == other.qualified && values == other.values;
 }
 
 HandResult HandEvaluator::evaluateHand(const std::vector<Card>& playerCards, 
@@ -413,4 +437,148 @@ std::string HandEvaluator::getSuitName(Suit suit) {
         case Suit::SPADES:   return "Spades";
     }
     return "";
+}
+
+LowHandResult HandEvaluator::evaluate5CardsForLowA5(const std::vector<Card>& fiveCards) {
+    if (fiveCards.size() != 5) {
+        return LO_HAND_UNQUALIFIED;
+    }
+    
+    // Convert all ranks to low values (A=1, 2=2, ..., K=13)
+    std::vector<int> ranks;
+    for (const auto& card : fiveCards) {
+        int lowValue;
+        switch (card.getRank()) {
+            case Rank::ACE:   lowValue = 1; break;
+            case Rank::TWO:   lowValue = 2; break;
+            case Rank::THREE: lowValue = 3; break;
+            case Rank::FOUR:  lowValue = 4; break;
+            case Rank::FIVE:  lowValue = 5; break;
+            case Rank::SIX:   lowValue = 6; break;
+            case Rank::SEVEN: lowValue = 7; break;
+            case Rank::EIGHT: lowValue = 8; break;
+            case Rank::NINE:  lowValue = 9; break;
+            case Rank::TEN:   lowValue = 10; break;
+            case Rank::JACK:  lowValue = 11; break;
+            case Rank::QUEEN: lowValue = 12; break;
+            case Rank::KING:  lowValue = 13; break;
+        }
+        ranks.push_back(lowValue);
+    }
+    
+    // Sort ranks
+    std::sort(ranks.begin(), ranks.end());
+    
+    // Count pairs/trips/quads - more pairs = worse for low
+    std::map<int, int> counts;
+    for (int rank : ranks) {
+        counts[rank]++;
+    }
+    
+    // Create comparison values - pairs/trips make the hand much worse
+    std::vector<int> compareValues;
+    
+    // First, add a "hand type" value (lower is better for low)
+    // No pairs = 0, one pair = 100, two pair = 200, trips = 300, etc.
+    int handType = 0;
+    for (const auto& count : counts) {
+        if (count.second == 2) handType += 100;      // pair
+        else if (count.second == 3) handType += 300; // trips  
+        else if (count.second == 4) handType += 500; // quads
+    }
+    compareValues.push_back(handType);
+    
+    // Then add ranks in order of importance for low hands
+    // For paired hands: pair rank(s) first (higher pair = worse), then kickers
+    // For no-pair hands: just the ranks high to low
+    
+    if (handType == 0) {
+        // No pairs - just add ranks from high to low
+        for (int i = 4; i >= 0; i--) {
+            compareValues.push_back(ranks[i]);
+        }
+    } else {
+        // Has pairs - add pair ranks first (higher pairs = worse for low)
+        std::vector<int> pairRanks;
+        std::vector<int> kickers;
+        
+        for (const auto& count : counts) {
+            if (count.second >= 2) {
+                // Add pair rank multiple times based on count for proper ordering
+                for (int j = 0; j < count.second; j++) {
+                    pairRanks.push_back(count.first);
+                }
+            } else {
+                kickers.push_back(count.first);
+            }
+        }
+        
+        // Sort pair ranks high to low (higher pairs are worse for low)
+        std::sort(pairRanks.rbegin(), pairRanks.rend());
+        // Sort kickers high to low
+        std::sort(kickers.rbegin(), kickers.rend());
+        
+        // Add pair ranks first, then kickers
+        for (int rank : pairRanks) {
+            compareValues.push_back(rank);
+        }
+        for (int rank : kickers) {
+            compareValues.push_back(rank);
+        }
+    }
+    
+    LowHandResult result;
+    result.bestLowHand = fiveCards;
+    result.values = compareValues;
+    result.qualified = true;  // Always true at this level - qualification checked at poker game level
+    
+    // Create description showing the hand from high to low card
+    std::string desc = "";
+    for (int i = 4; i >= 0; i--) {  // Show highest to lowest
+        if (desc.length() > 0) desc += "-";
+        if (ranks[i] == 1) desc += "A";
+        else if (ranks[i] == 11) desc += "J";
+        else if (ranks[i] == 12) desc += "Q"; 
+        else if (ranks[i] == 13) desc += "K";
+        else desc += std::to_string(ranks[i]);
+    }
+    desc += " low";
+    result.description = desc;
+    
+    return result;
+}
+
+LowHandResult HandEvaluator::evaluateLowHand(const std::vector<Card>& playerCards, 
+                                            const std::vector<Card>& communityCards) {
+    // Combine all available cards
+    std::vector<Card> allCards = playerCards;
+    allCards.insert(allCards.end(), communityCards.begin(), communityCards.end());
+    
+    if (allCards.size() <= 5) {
+        return evaluate5CardsForLowA5(allCards);
+    }
+    
+    // Generate all combinations of 5 cards and find the best for low
+    LowHandResult bestLowResult = LO_HAND_UNQUALIFIED;
+    
+    // Use algorithm to generate combinations  
+    std::vector<bool> selector(allCards.size());
+    std::fill(selector.end() - 5, selector.end(), true);
+    
+    do {
+        std::vector<Card> combination;
+        for (size_t i = 0; i < allCards.size(); ++i) {
+            if (selector[i]) {
+                combination.push_back(allCards[i]);
+            }
+        }
+        
+        LowHandResult result = evaluate5CardsForLowA5(combination);
+        if (result < bestLowResult) {
+            bestLowResult = result;
+        }
+        
+    } while (std::next_permutation(selector.begin(), selector.end()));
+    
+    return bestLowResult;
 } 

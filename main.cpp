@@ -1,28 +1,7 @@
 #include "poker_game.h"
 #include "table.h"
 #include <iostream>
-#include <sstream>
 #include <memory>
-
-// Global buffer for capturing output
-std::stringstream outputBuffer;
-std::streambuf* originalCout;
-
-// Function to redirect cout to buffer
-void startBuffering() {
-    originalCout = std::cout.rdbuf();
-    std::cout.rdbuf(outputBuffer.rdbuf());
-}
-
-// Function to restore cout and optionally flush buffer
-void endBuffering(bool display = true) {
-    std::cout.rdbuf(originalCout);
-    if (display) {
-        std::cout << outputBuffer.str();
-    }
-    outputBuffer.str("");  // Clear buffer
-    outputBuffer.clear();  // Clear flags
-}
 
 int main() {
     std::cout << "=== POKER VARIANTS ===" << std::endl;
@@ -43,6 +22,8 @@ int main() {
     table.addPlayer("Bob", 1000, 1, PlayerPersonality::LOOSE_PASSIVE);
     table.addPlayer("Charlie", 1000, 2, PlayerPersonality::TIGHT_PASSIVE);
     table.addPlayer("Diana", 1000, 3, PlayerPersonality::LOOSE_AGGRESSIVE);
+    table.addPlayer("Eve", 1000, 4, PlayerPersonality::LOOSE_AGGRESSIVE);
+    table.addPlayer("Frank", 1000, 5, PlayerPersonality::TIGHT_AGGRESSIVE);
     
     // Set dealer position (Bob is dealer)
     table.advanceDealer(); // Move from 0 (Alice) to 1 (Bob)
@@ -73,31 +54,97 @@ int main() {
     }
     
     // Track starting chip amounts for accurate gain/loss calculation
-    std::vector<int> startingChips = {1000, 1000, 1000, 1000};
+    std::vector<int> startingChips = {1000, 1000, 1000, 1000, 1000, 1000};
     
-    // Start buffering to capture hand output
-    // startBuffering(); // DISABLED - causes infinite loop in Seven Card Stud
+    // Multi-hand simulation
+    const int NUM_HANDS = 50;
+    VariantInfo variantInfo = game->getVariantInfo();
     
-    std::cout << "\n=== HAND 1 ===" << std::endl;
-    
-    // Start the hand
-    game->startNewHand();
-    
-    // Show initial state
-    game->showGameState();
-    
-    // Run the game
-    game->runBettingRounds();
-    
-    // Conduct showdown if not already done
-    if (!game->isHandComplete()) {
-        game->conductShowdown();
+    for (int handNum = 1; handNum <= NUM_HANDS; handNum++) {
+        std::cout << "\n=== HAND " << handNum << " ===" << std::endl;
+        
+        // Reset players for new hand
+        for (int i = 0; i < table.getPlayerCount(); i++) {
+            Player* player = table.getPlayer(i);
+            if (player) {
+                player->resetForNewHand();
+            }
+        }
+        
+        // Reset table state 
+        table.setCurrentBet(0);
+        table.getSidePotManager().clearPots();
+        table.clearCommunityCards();
+        
+        // Advance button for board games only  
+        if (variantInfo.gameStruct == GAMESTRUCTURE_BOARD && handNum > 1) {
+            table.advanceDealer();
+            std::cout << "Button advances to " << table.getPlayer(table.getDealerPosition())->getName() << std::endl;
+        }
+        
+        // Start the hand
+        game->startNewHand();
+        
+        // Show initial state
+        game->showGameState();
+        
+        // Run the game
+        game->runBettingRounds();
+        
+        // Conduct showdown if not already done
+        if (!game->isHandComplete()) {
+            game->conductShowdown();
+        }
+        
+        std::cout << "\n=== END HAND " << handNum << " ===" << std::endl;
+        
+        // Remove broke players (those with 0 chips)
+        std::vector<std::string> brokePlayerNames;
+        for (int i = table.getPlayerCount() - 1; i >= 0; i--) {
+            Player* player = table.getPlayer(i);
+            if (player && player->getChips() == 0) {
+                brokePlayerNames.push_back(player->getName());
+                table.removePlayer(i);
+            }
+        }
+        
+        if (!brokePlayerNames.empty()) {
+            std::cout << "\nPlayers eliminated (broke): ";
+            for (size_t i = 0; i < brokePlayerNames.size(); i++) {
+                if (i > 0) std::cout << ", ";
+                std::cout << brokePlayerNames[i];
+            }
+            std::cout << std::endl;
+        }
+        
+        // Check if we have enough players to continue
+        if (table.getPlayerCount() < 2) {
+            std::cout << "\nGame ended - not enough players remaining!" << std::endl;
+            break;
+        }
+        
+        // Show chip counts after each hand
+        if (handNum < NUM_HANDS) {
+            std::cout << "\n--- Chip Counts After Hand " << handNum << " ---" << std::endl;
+            for (int i = 0; i < table.getPlayerCount(); i++) {
+                Player* player = table.getPlayer(i);
+                if (player) {
+                    int gain = player->getChips() - startingChips[i];
+                    std::cout << player->getName() << ": $" << player->getChips();
+                    if (gain > 0) {
+                        std::cout << " (+$" << gain << ")";
+                    } else if (gain < 0) {
+                        std::cout << " (-$" << (-gain) << ")";
+                    }
+                    std::cout << std::endl;
+                }
+            }
+        }
+        
+        // Reset and shuffle deck for next hand
+        table.getDeck().reset();
+        table.getDeck().shuffle();
     }
-    
-    std::cout << "\n=== END HAND 1 ===" << std::endl;
-    
-    // End buffering and display the hand
-    endBuffering(true);
     
     // Display final chip counts
     std::cout << "\n=== FINAL CHIP COUNTS ===" << std::endl;

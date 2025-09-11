@@ -21,6 +21,7 @@ public:
     
     // Player management
     void addPlayer(const std::string& name, int chips, int playerId, PlayerPersonality personality = PlayerPersonality::TIGHT_PASSIVE);
+    void removePlayer(int index);
     Player* getPlayer(int index);
     const Player* getPlayer(int index) const;
     int getPlayerCount() const;
@@ -36,6 +37,7 @@ public:
     
     // Community cards
     const std::vector<Card>& getCommunityCards() const;
+    void clearCommunityCards();
     void showCommunityCards() const;
     
     // Betting and pot management

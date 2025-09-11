@@ -24,7 +24,8 @@ enum BestHandResolution
 enum PotResolution
 {
     POTRESOLUTION_HIONLY,
-    POTRESOLUTION_HILO_ACETO5
+    POTRESOLUTION_HILO_ACETO5,
+    POTRESOLUTION_HILO_A5_MUSTQUALIFY
 };
 
 enum BettingStructure
@@ -84,7 +85,7 @@ namespace PokerVariants {
         {10, 20}, // smallBlind, bigBlind
         BETTINGSTRUCTURE_LIMIT,
         BESTHANDRESOLUTION_TWOPLUSTHREE,
-        POTRESOLUTION_HILO_ACETO5
+        POTRESOLUTION_HILO_A5_MUSTQUALIFY
     };
 }
 

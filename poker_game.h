@@ -20,6 +20,10 @@ protected:
     std::vector<bool> hasActedThisRound;
     UnifiedBettingRound currentRound;
     
+    // Hi-Lo specific winner tracking
+    std::vector<int> hiWinners;
+    std::vector<int> loWinners;
+    
 public:
     PokerGame(Table* gameTable, const VariantInfo& variant);
     virtual ~PokerGame() = default;
@@ -50,7 +54,7 @@ public:
     
     // Common methods
     virtual void showGameState() const;
-    virtual std::vector<int> findWinners(const std::vector<int>& eligiblePlayers) const;
+    virtual std::vector<int> findWinners(const std::vector<int>& eligiblePlayers);
     
     // Common pot mechanics (same across all poker variants)
     virtual void collectBetsToInFor(); // Collect inFor amounts to pots at end of betting round
@@ -79,12 +83,16 @@ public:
     virtual void completeBettingRound(HandHistoryRound currentRound);
     
     // Utility functions for showdown (common operations)
-    virtual std::vector<int> findBestHand(const std::vector<int>& eligiblePlayers) const; // Find winners among eligible players (virtual for variants)
+    virtual std::vector<int> findBestHand(const std::vector<int>& eligiblePlayers); // Find winners among eligible players (virtual for variants)
     virtual void displayWinningHands(const std::vector<int>& winners, const std::vector<int>& eligiblePlayers) const; // Show hand descriptions (virtual for variants)
     void splitPotAmongWinners(int potAmount, const std::vector<int>& winners) const; // Calculate split amounts (doesn't transfer)
     
     // Variant-specific hand evaluation methods
     HandResult evaluateOmahaHand(const std::vector<Card>& holeCards, const std::vector<Card>& communityCards) const;
+    LowHandResult evaluateOmahaLowHand(const std::vector<Card>& holeCards, const std::vector<Card>& communityCards) const;
+    std::vector<int> findHiLoWinners(const std::vector<int>& eligiblePlayers);
+    void displayHiLoWinningHands(const std::vector<int>& winners, const std::vector<int>& eligiblePlayers) const;
+    void transferHiLoPotsToWinners(int potAmount);
     
     // Getters
     VariantInfo getVariantInfo() const { return variantInfo; }

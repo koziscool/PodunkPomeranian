@@ -11,6 +11,21 @@ void Table::addPlayer(const std::string& name, int chips, int playerId, PlayerPe
     players.push_back(std::make_unique<Player>(name, chips, playerId, personality));
 }
 
+void Table::removePlayer(int index) {
+    if (index >= 0 && index < static_cast<int>(players.size())) {
+        // Adjust dealer position if necessary
+        if (index <= dealerPosition && dealerPosition > 0) {
+            dealerPosition--;
+        }
+        // Remove the player
+        players.erase(players.begin() + index);
+        // Ensure dealer position is still valid
+        if (dealerPosition >= static_cast<int>(players.size()) && !players.empty()) {
+            dealerPosition = 0;
+        }
+    }
+}
+
 Player* Table::getPlayer(int index) {
     if (index >= 0 && index < static_cast<int>(players.size())) {
         return players[index].get();
@@ -119,6 +134,10 @@ void Table::dealRiver() {
 
 const std::vector<Card>& Table::getCommunityCards() const {
     return communityCards;
+}
+
+void Table::clearCommunityCards() {
+    communityCards.clear();
 }
 
 void Table::showCommunityCards() const {

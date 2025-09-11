@@ -29,10 +29,27 @@ struct HandResult {
     bool operator==(const HandResult& other) const;
 };
 
+struct LowHandResult {
+    bool qualified;  // true if qualifies for low (8-or-better)
+    std::vector<int> values;  // For tie-breaking (lower values win)
+    std::vector<Card> bestLowHand;
+    std::string description;
+    
+    bool operator<(const LowHandResult& other) const;  // Lower is better for low hands
+    bool operator==(const LowHandResult& other) const;
+};
+
+// Constant representing an unqualified low hand - loses to any qualified hand, ties with other unqualified
+extern const LowHandResult LO_HAND_UNQUALIFIED;
+
 class HandEvaluator {
 public:
     static HandResult evaluateHand(const std::vector<Card>& playerCards, 
                                  const std::vector<Card>& communityCards);
+    
+    static LowHandResult evaluate5CardsForLowA5(const std::vector<Card>& fiveCards);
+    static LowHandResult evaluateLowHand(const std::vector<Card>& playerCards, 
+                                       const std::vector<Card>& communityCards);
     
     static std::string getRankName(Rank rank);
     static std::string getSuitName(Suit suit);

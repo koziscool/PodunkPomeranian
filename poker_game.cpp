@@ -1,6 +1,7 @@
 #include "poker_game.h"
 #include <iostream>
 #include <set>
+#include <map>
 #include <algorithm>
 
 PokerGame::PokerGame(Table* gameTable, const VariantInfo& variant)
@@ -11,7 +12,11 @@ PokerGame::PokerGame(Table* gameTable, const VariantInfo& variant)
 }
 
 void PokerGame::showGameState() const {
-    table->showTable();
+    if (variantInfo.gameStruct == GAMESTRUCTURE_STUD) {
+        table->showTableForStud();
+    } else {
+        table->showTable();
+    }
 }
 
 std::vector<int> PokerGame::findWinners(const std::vector<int>& eligiblePlayers) {
@@ -52,7 +57,6 @@ bool PokerGame::playerCall(int playerIndex) {
     }
     
     player->addToInFor(callAmount);
-    std::cout << player->getName() << " calls $" << currentBet << std::endl;
     return true;
 }
 
@@ -72,14 +76,9 @@ bool PokerGame::playerRaise(int playerIndex, int amount) {
     }
     
     player->addToInFor(additionalAmount);
-    int previousBet = table->getCurrentBet();
     table->setCurrentBet(amount);
     
-    if (previousBet == 0) {
-        std::cout << player->getName() << " bets $" << amount << std::endl;
-    } else {
-        std::cout << player->getName() << " raises to $" << amount << std::endl;
-    }
+    // Action display handled by completeBettingRound
     return true;
 }
 
@@ -88,7 +87,6 @@ bool PokerGame::playerFold(int playerIndex) {
     if (!player) return false;
     
     PlayerAction action = player->fold();
-    std::cout << player->getName() << " folds" << std::endl;
     return action == PlayerAction::FOLD;
 }
 
@@ -99,7 +97,6 @@ bool PokerGame::playerAllIn(int playerIndex) {
     int allInAmount = player->getCurrentBet() + player->getChips();
     PlayerAction action = player->goAllIn();
     table->setCurrentBet(allInAmount);
-    std::cout << player->getName() << " goes all-in for $" << allInAmount << std::endl;
     return action == PlayerAction::ALL_IN;
 }
 
@@ -116,7 +113,6 @@ bool PokerGame::playerCheck(int playerIndex) {
     }
     
     PlayerAction action = player->check();
-    std::cout << player->getName() << " checks" << std::endl;
     return action == PlayerAction::CHECK;
 }
 
@@ -433,9 +429,31 @@ void PokerGame::resetBettingRound() {
     hasActedThisRound.assign(table->getPlayerCount(), false);
 }
 
-void PokerGame::completeBettingRound(HandHistoryRound currentRound) {
+void PokerGame::completeBettingRound(HandHistoryRound historyRound) {
+    // Reset betting round state at the start of each betting round
+    resetBettingRound();
+    
     int actionCount = 0;
     const int MAX_ACTIONS = 10; // Reduced safety limit
+    
+    // Special handling for Stud third street - show bring-in as first action
+    if (variantInfo.gameStruct == GAMESTRUCTURE_STUD && historyRound == HandHistoryRound::PRE_FLOP) {
+        // Find the bring-in player and show the action
+        int bringInPlayerIndex = -1;
+        for (int i = 0; i < table->getPlayerCount(); i++) {
+            Player* player = table->getPlayer(i);
+            if (player && !player->hasFolded() && player->getInFor() > 0) {
+                showGameState();
+                std::cout << player->getName() << " brings in for $" << player->getInFor() << std::endl;
+                bringInPlayerIndex = i;
+                break;
+            }
+        }
+        // Mark bring-in player as having acted AFTER the reset
+        if (bringInPlayerIndex != -1) {
+            hasActedThisRound[bringInPlayerIndex] = true;
+        }
+    }
     
     // Quick exit if only one player remains
     if (countActivePlayers() <= 1) {
@@ -473,7 +491,7 @@ void PokerGame::completeBettingRound(HandHistoryRound currentRound) {
                 break;
             case PlayerAction::CALL:
                 playerCall(playerIndex);
-                actionDesc = "calls $" + std::to_string(callAmount);
+                actionDesc = "calls $" + std::to_string(player->getInFor());
                 break;
             case PlayerAction::RAISE: {
                 int raiseAmount = player->calculateRaiseAmount(handHistory, currentBet, variantInfo);
@@ -487,12 +505,15 @@ void PokerGame::completeBettingRound(HandHistoryRound currentRound) {
             }
             case PlayerAction::ALL_IN:
                 playerAllIn(playerIndex);
-                actionDesc = "goes all-in for $" + std::to_string(player->getChips());
+                actionDesc = "goes all-in for $" + std::to_string(player->getInFor());
                 break;
         }
         
+        // Display the action
+        std::cout << player->getName() << " " << actionDesc << std::endl;
+        
         // Record the action in hand history
-        recordPlayerAction(currentRound, player->getPlayerId(), 
+        recordPlayerAction(historyRound, player->getPlayerId(), 
                           static_cast<ActionType>(decision), 
                           (decision == PlayerAction::RAISE) ? player->calculateRaiseAmount(handHistory, currentBet, variantInfo) : callAmount,
                           actionDesc);
@@ -576,6 +597,13 @@ void PokerGame::dealInitialCards() {
                 player->addCard(table->getDeck().dealCard(), true);
             }
         }
+        // Mark initial 3rd street cards as not "new" so they don't get asterisks
+        for (int i = 0; i < table->getPlayerCount(); i++) {
+            Player* player = table->getPlayer(i);
+            if (player) {
+                player->markStartOfStreet(); // Sets cardsAtStartOfStreet to current hand size (3)
+            }
+        }
     }
 }
 
@@ -628,11 +656,18 @@ void PokerGame::gameFlowForSTUD() {
     while (!isHandComplete()) {
         if (currentRound == UNIFIED_PRE_FLOP) { // Third street
             std::cout << "\n=== THIRD STREET ===" << std::endl;
-            showGameState();
+            // Don't show game state before betting - bring-in will be shown as first action
             completeBettingRound(HandHistoryRound::PRE_FLOP);
             nextRound();
         } else if (currentRound == UNIFIED_FLOP) { // Fourth street
             std::cout << "\n=== FOURTH STREET ===" << std::endl;
+            // Mark start of new street for all players
+            for (int i = 0; i < table->getPlayerCount(); i++) {
+                Player* player = table->getPlayer(i);
+                if (player && !player->hasFolded()) {
+                    player->markStartOfStreet();
+                }
+            }
             // Deal one up card to each player
             for (int i = 0; i < table->getPlayerCount(); i++) {
                 Player* player = table->getPlayer(i);
@@ -641,10 +676,19 @@ void PokerGame::gameFlowForSTUD() {
                 }
             }
             showGameState();
+            // Set betting order based on highest up cards
+            currentPlayerIndex = findStudFirstToAct();
             completeBettingRound(HandHistoryRound::FLOP);
             nextRound();
         } else if (currentRound == UNIFIED_TURN) { // Fifth street
             std::cout << "\n=== FIFTH STREET ===" << std::endl;
+            // Mark start of new street for all players
+            for (int i = 0; i < table->getPlayerCount(); i++) {
+                Player* player = table->getPlayer(i);
+                if (player && !player->hasFolded()) {
+                    player->markStartOfStreet();
+                }
+            }
             // Deal one up card to each player
             for (int i = 0; i < table->getPlayerCount(); i++) {
                 Player* player = table->getPlayer(i);
@@ -653,10 +697,19 @@ void PokerGame::gameFlowForSTUD() {
                 }
             }
             showGameState();
+            // Set betting order based on highest up cards
+            currentPlayerIndex = findStudFirstToAct();
             completeBettingRound(HandHistoryRound::TURN);
             nextRound();
         } else if (currentRound == UNIFIED_RIVER) { // Sixth street
             std::cout << "\n=== SIXTH STREET ===" << std::endl;
+            // Mark start of new street for all players
+            for (int i = 0; i < table->getPlayerCount(); i++) {
+                Player* player = table->getPlayer(i);
+                if (player && !player->hasFolded()) {
+                    player->markStartOfStreet();
+                }
+            }
             // Deal one up card to each player
             for (int i = 0; i < table->getPlayerCount(); i++) {
                 Player* player = table->getPlayer(i);
@@ -665,10 +718,19 @@ void PokerGame::gameFlowForSTUD() {
                 }
             }
             showGameState();
+            // Set betting order based on highest up cards
+            currentPlayerIndex = findStudFirstToAct();
             completeBettingRound(HandHistoryRound::RIVER);
             nextRound();
         } else if (currentRound == UNIFIED_FINAL) { // Seventh street
             std::cout << "\n=== SEVENTH STREET ===" << std::endl;
+            // Mark start of new street for all players
+            for (int i = 0; i < table->getPlayerCount(); i++) {
+                Player* player = table->getPlayer(i);
+                if (player && !player->hasFolded()) {
+                    player->markStartOfStreet();
+                }
+            }
             // Deal final down card to each player
             for (int i = 0; i < table->getPlayerCount(); i++) {
                 Player* player = table->getPlayer(i);
@@ -677,6 +739,8 @@ void PokerGame::gameFlowForSTUD() {
                 }
             }
             showGameState();
+            // Set betting order based on highest up cards (same as 6th street)
+            currentPlayerIndex = findStudFirstToAct();
             completeBettingRound(HandHistoryRound::SHOWDOWN);
             currentRound = UNIFIED_SHOWDOWN;
         }
@@ -722,6 +786,8 @@ void PokerGame::postAntesAndBringIn() {
     int ante = variantInfo.betSizes[0];
     int bringIn = variantInfo.betSizes[1];
     
+    std::cout << "All players ante $" << ante << std::endl;
+    
     // Collect antes from all players - goes directly to pot, not inFor
     int totalAntes = 0;
     for (int i = 0; i < table->getPlayerCount(); i++) {
@@ -746,7 +812,8 @@ void PokerGame::postAntesAndBringIn() {
         Player* player = table->getPlayer(i);
         if (player && !player->hasFolded()) {
             Card upCard = player->getLowestUpCard();
-            if (static_cast<int>(upCard.getRank()) < static_cast<int>(lowestCard.getRank())) {
+            if (static_cast<int>(upCard.getRank()) < static_cast<int>(lowestCard.getRank()) ||
+                (upCard.getRank() == lowestCard.getRank() && static_cast<int>(upCard.getSuit()) < static_cast<int>(lowestCard.getSuit()))) {
                 lowestCard = upCard;
                 bringInPlayer = i;
             }
@@ -762,13 +829,116 @@ void PokerGame::postAntesAndBringIn() {
                           ActionType::POST_BLIND, bringIn,
                           "brings in for $" + std::to_string(bringIn));
         
-        std::cout << bringInPlayerPtr->getName() << " has lowest card (" 
-                  << lowestCard.toString() << ") and must bring-in for $" << bringIn << std::endl;
-        std::cout << bringInPlayerPtr->getName() << " brings in for $" << bringIn << std::endl;
+        // Don't show bring-in immediately - will be shown as first betting action
         
         // First to act is next player after bring-in
         currentPlayerIndex = (bringInPlayer + 1) % table->getPlayerCount();
     }
+}
+
+int PokerGame::findStudFirstToAct() const {
+    // For 4th street and beyond: player with highest up cards acts first
+    int bestPlayerIndex = -1;
+    std::vector<Card> bestUpCards;
+    
+    for (int i = 0; i < table->getPlayerCount(); i++) {
+        Player* player = table->getPlayer(i);
+        if (player && !player->hasFolded()) {
+            std::vector<Card> upCards = player->getUpCards();
+            if (!upCards.empty()) {
+                // Simple comparison for Stud: pairs beat high card, higher pairs beat lower pairs
+                if (bestPlayerIndex == -1 || determineBettorForStud(upCards, bestUpCards)) {
+                    bestUpCards = upCards;
+                    bestPlayerIndex = i;
+                }
+            }
+        }
+    }
+    
+    return bestPlayerIndex;
+}
+
+bool PokerGame::determineBettorForStud(const std::vector<Card>& hand1, const std::vector<Card>& hand2) const {
+    // Analyze both hands for Stud betting order: 4-of-a-kind > trips > 2-pair > 1-pair > high card
+    auto analyzeHand = [](const std::vector<Card>& hand) {
+        std::map<Rank, int> counts;
+        for (const Card& card : hand) {
+            counts[card.getRank()]++;
+        }
+        
+        // Find pairs, trips, quads and categorize hand
+        std::vector<std::pair<int, int>> pairs; // (count, rank)
+        std::vector<int> kickers;
+        
+        for (const auto& entry : counts) {
+            int count = entry.second;
+            int rank = static_cast<int>(entry.first);
+            
+            if (count >= 2) {
+                pairs.push_back({count, rank});
+            } else {
+                kickers.push_back(rank);
+            }
+        }
+        
+        // Sort pairs by count first, then by rank (descending)
+        std::sort(pairs.begin(), pairs.end(), [](const auto& a, const auto& b) {
+            if (a.first != b.first) return a.first > b.first; // Higher count first
+            return a.second > b.second; // Higher rank first
+        });
+        
+        // Sort kickers descending
+        std::sort(kickers.rbegin(), kickers.rend());
+        
+        return std::make_pair(pairs, kickers);
+    };
+    
+    auto result1 = analyzeHand(hand1);
+    auto result2 = analyzeHand(hand2);
+    auto pairs1 = result1.first;
+    auto kickers1 = result1.second;
+    auto pairs2 = result2.first;
+    auto kickers2 = result2.second;
+    
+    // Compare hand types first
+    // Determine hand type: 0=high card, 1=one pair, 2=two pair, 3=trips, 4=quads
+    auto getHandType = [](const std::vector<std::pair<int, int>>& pairs) {
+        if (pairs.empty()) return 0; // high card
+        if (pairs[0].first == 4) return 4; // quads
+        if (pairs[0].first == 3) return 3; // trips
+        if (pairs.size() >= 2) return 2; // two pair
+        if (pairs[0].first == 2) return 1; // one pair
+        return 0;
+    };
+    
+    int type1 = getHandType(pairs1);
+    int type2 = getHandType(pairs2);
+    
+    if (type1 != type2) {
+        return type1 > type2;
+    }
+    
+    // Same hand type - compare within type
+    if (type1 >= 1) { // Has pairs/trips/quads
+        // Compare primary pairs/trips/quads first
+        for (size_t i = 0; i < std::min(pairs1.size(), pairs2.size()); i++) {
+            if (pairs1[i].second != pairs2[i].second) {
+                return pairs1[i].second > pairs2[i].second;
+            }
+        }
+        // If pairs are equal, compare kickers
+    }
+    
+    // Compare kickers (or high cards if no pairs)
+    size_t minKickers = std::min(kickers1.size(), kickers2.size());
+    for (size_t i = 0; i < minKickers; i++) {
+        if (kickers1[i] != kickers2[i]) {
+            return kickers1[i] > kickers2[i];
+        }
+    }
+    
+    // If all compared cards equal, more cards is better
+    return hand1.size() > hand2.size();
 }
 
 void PokerGame::nextRound() {
@@ -788,8 +958,7 @@ void PokerGame::nextRound() {
         currentRound = UNIFIED_SHOWDOWN;
     }
     
-    // Reset betting round state
-    resetBettingRound();
+    // Reset current bet for next round
     table->setCurrentBet(0);
     
     // Set first to act (different for BOARD vs STUD)
@@ -821,6 +990,59 @@ void PokerGame::conductShowdown() {
     }
     
     awardPotsStaged();
+}
+
+void PokerGame::awardPotsWithoutShowdown() {
+    // Find the single remaining active player
+    int remainingPlayer = -1;
+    int activeCount = 0;
+    
+    for (int i = 0; i < table->getPlayerCount(); i++) {
+        Player* player = table->getPlayer(i);
+        if (player && !player->hasFolded()) {
+            remainingPlayer = i;
+            activeCount++;
+        }
+    }
+    
+    if (activeCount != 1) {
+        std::cout << "Error: awardPotsWithoutShowdown called but " << activeCount << " players remain active!" << std::endl;
+        return;
+    }
+    
+    Player* winner = table->getPlayer(remainingPlayer);
+    if (!winner) {
+        std::cout << "Error: Could not find remaining player!" << std::endl;
+        return;
+    }
+    
+    const auto& pots = table->getSidePotManager().getPots();
+    int totalWinnings = 0;
+    
+    std::cout << "\n=== ALL OTHER PLAYERS FOLDED ===" << std::endl;
+    std::cout << winner->getName() << " wins by default!" << std::endl;
+    
+    // Award all pots to the remaining player
+    for (size_t i = 0; i < pots.size(); i++) {
+        const SidePot& pot = pots[i];
+        
+        // Check if this player is eligible for this pot
+        if (pot.eligiblePlayers.find(remainingPlayer) != pot.eligiblePlayers.end()) {
+            std::cout << "Awarding ";
+            if (i == 0) {
+                std::cout << "main pot";
+            } else {
+                std::cout << "side pot " << i;
+            }
+            std::cout << " ($" << pot.amount << ") to " << winner->getName() << std::endl;
+            
+            winner->addChips(pot.amount);
+            totalWinnings += pot.amount;
+        }
+    }
+    
+    std::cout << winner->getName() << " total winnings: $" << totalWinnings << std::endl;
+    std::cout << winner->getName() << " now has $" << winner->getChips() << std::endl;
 }
 
 bool PokerGame::atShowdown() const {

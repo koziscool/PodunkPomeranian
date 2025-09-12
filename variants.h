@@ -15,6 +15,11 @@ enum NumHoleCards
     NUMHOLECARDS_FOUR
 };
 
+enum Breakage
+{
+    POT_BREAK_TO_1
+};
+
 enum BestHandResolution
 {
     BESTHANDRESOLUTION_ANYFIVE,

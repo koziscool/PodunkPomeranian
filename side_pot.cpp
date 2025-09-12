@@ -114,6 +114,11 @@ void SidePotManager::addEligiblePlayersToMainPot(const std::set<int>& players) {
     }
 }
 
+void SidePotManager::addSidePot(int amount, int betLevel, const std::set<int>& eligiblePlayers) {
+    pots.emplace_back(amount, betLevel);
+    pots.back().eligiblePlayers = eligiblePlayers;
+}
+
 int SidePotManager::getTotalPotAmount() const {
     int total = 0;
     for (const auto& pot : pots) {

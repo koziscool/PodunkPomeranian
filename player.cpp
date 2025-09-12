@@ -6,7 +6,7 @@
 #include <ctime>
 
 Player::Player(const std::string& playerName, int startingChips, int id, PlayerPersonality playerPersonality) 
-    : name(playerName), chips(startingChips), currentBet(0), inFor(0), folded(false), allIn(false), 
+    : name(playerName), chips(startingChips), cardsAtStartOfStreet(0), currentBet(0), inFor(0), folded(false), allIn(false), 
       personality(playerPersonality), playerId(id), rng(std::time(nullptr) + id) {
 }
 
@@ -102,6 +102,26 @@ Card Player::getLowestUpCard() const {
         }
     }
     return lowest;
+}
+
+void Player::markStartOfStreet() {
+    cardsAtStartOfStreet = hand.size();
+}
+
+void Player::showStudHandWithNew() const {
+    for (size_t i = 0; i < hand.size(); i++) {
+        bool isNewCard = (static_cast<int>(i) >= cardsAtStartOfStreet);
+        
+        if (cardsFaceUp[i]) {
+            std::cout << hand[i].toString();
+            if (isNewCard) std::cout << "*"; // Mark new cards with *
+            std::cout << " ";
+        } else {
+            std::cout << "[" << hand[i].toString() << "]";
+            if (isNewCard) std::cout << "*"; // Mark new hole cards too
+            std::cout << " ";
+        }
+    }
 }
 
 void Player::addChips(int amount) {

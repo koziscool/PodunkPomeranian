@@ -1,6 +1,7 @@
 #include "table.h"
 #include <iostream>
 #include <iomanip>
+#include <algorithm>
 #include <set> // Added for std::set
 
 Table::Table() : dealerPosition(0), currentBet(0) {
@@ -230,61 +231,102 @@ void Table::createSidePotsFromCurrentBets() {
 }
 
 void Table::createSidePotsFromInFor() {
-    std::vector<std::pair<int, int>> playerBets;
-    int foldedPlayerMoney = 0;
+    // Matching-based pot allocation logic
+    // Process all-ins once at end of betting round
     
-    // Separate active players from folded players
+    // Find all unique all-in amounts and sort from smallest to largest
+    std::set<int> allInLevels;
     for (int i = 0; i < getPlayerCount(); i++) {
         Player* player = getPlayer(i);
-        if (player && player->getInFor() > 0) {
-            if (player->hasFolded()) {
-                foldedPlayerMoney += player->getInFor();
-            } else {
-                playerBets.emplace_back(i, player->getInFor());
-            }
+        if (player && player->isAllIn() && player->getInFor() > 0) {
+            allInLevels.insert(player->getInFor());
         }
     }
     
-    // Check if all active players bet the same amount (no side pots needed)
-    bool allSameAmount = true;
-    if (!playerBets.empty()) {
-        int firstAmount = playerBets[0].second;
-        for (const auto& bet : playerBets) {
-            if (bet.second != firstAmount) {
-                allSameAmount = false;
-                break;
-            }
-        }
-    }
-    
-    if (allSameAmount && !playerBets.empty()) {
-        // No side pots needed - just add all amounts to main pot
-        int totalBettingRoundAmount = 0;
+    // If no all-in players, just add everything to main pot
+    if (allInLevels.empty()) {
+        int totalAmount = 0;
         std::set<int> eligiblePlayers;
         
-        for (const auto& bet : playerBets) {
-            totalBettingRoundAmount += bet.second;
-            eligiblePlayers.insert(bet.first); // Add player to eligible list
+        // Collect all money from all players (including folded)
+        for (int i = 0; i < getPlayerCount(); i++) {
+            Player* player = getPlayer(i);
+            if (player && player->getInFor() > 0) {
+                totalAmount += player->getInFor();
+                if (!player->hasFolded()) {
+                    eligiblePlayers.insert(i);
+                }
+            }
         }
-        totalBettingRoundAmount += foldedPlayerMoney;
         
-        // If there's already a main pot, add to it and update eligible players
+        // Add to existing pot or create new one
         if (!sidePotManager.getPots().empty()) {
-            sidePotManager.addToMainPot(totalBettingRoundAmount);
-            // Update eligible players for the main pot
+            sidePotManager.addToMainPot(totalAmount);
             sidePotManager.addEligiblePlayersToMainPot(eligiblePlayers);
-        } else {
-            // Create new main pot with eligible players
-            sidePotManager.addToPot(totalBettingRoundAmount, eligiblePlayers);
+        } else if (totalAmount > 0) {
+            sidePotManager.addToPot(totalAmount, eligiblePlayers);
         }
-    } else {
-        // Side pots needed - use the full side pot creation logic
-        sidePotManager.createSidePotsFromBets(playerBets);
         
-        // Add folded player money to the main pot
-        if (foldedPlayerMoney > 0) {
-            sidePotManager.addToMainPot(foldedPlayerMoney);
+        return;
+    }
+    
+    // Process each all-in level using matching logic
+    int previousLevel = 0;
+    bool isFirstPot = sidePotManager.getPots().empty();
+    
+    for (int allInLevel : allInLevels) {
+        int matchAmount = allInLevel - previousLevel;
+        if (matchAmount <= 0) continue;
+        
+        std::set<int> eligiblePlayers;
+        int potTotal = 0;
+        
+        // Match this amount from all players who have at least this much
+        // This includes both live players and folded players
+        for (int i = 0; i < getPlayerCount(); i++) {
+            Player* player = getPlayer(i);
+            if (player && player->getInFor() >= allInLevel) {
+                // This player contributed to this pot level
+                potTotal += matchAmount;
+                
+                // Only live players are eligible to win
+                if (!player->hasFolded()) {
+                    eligiblePlayers.insert(i);
+                }
+            }
         }
+        
+        // Create pot if there's money and eligible players
+        if (potTotal > 0 && !eligiblePlayers.empty()) {
+            if (isFirstPot) {
+                // First pot becomes main pot
+                sidePotManager.addToPot(potTotal, eligiblePlayers);
+                isFirstPot = false;
+            } else {
+                // Additional pots become side pots
+                sidePotManager.addSidePot(potTotal, allInLevel, eligiblePlayers);
+            }
+        }
+        
+        previousLevel = allInLevel;
+    }
+    
+    // Handle remaining money from players who contributed more than highest all-in
+    int highestAllIn = allInLevels.empty() ? 0 : *allInLevels.rbegin();
+    std::set<int> remainingEligible;
+    int remainingTotal = 0;
+    
+    for (int i = 0; i < getPlayerCount(); i++) {
+        Player* player = getPlayer(i);
+        if (player && player->getInFor() > highestAllIn && !player->hasFolded()) {
+            remainingEligible.insert(i);
+            remainingTotal += (player->getInFor() - highestAllIn);
+        }
+    }
+    
+    if (remainingTotal > 0 && remainingEligible.size() > 1) {
+        // Create final side pot for remaining active players
+        sidePotManager.addSidePot(remainingTotal, highestAllIn + 1, remainingEligible);
     }
 }
 
@@ -338,6 +380,33 @@ void Table::showTable() const {
     for (size_t i = 0; i < players.size(); i++) {
         std::cout << (i == static_cast<size_t>(dealerPosition) ? "[D] " : "    ");
         players[i]->showStatus(true);
+    }
+    std::cout << std::endl;
+}
+
+void Table::showTableForStud() const {
+    std::cout << "\n=== TABLE STATUS ===" << std::endl;
+    std::cout << "Pot: $" << getPot() << " | Current Bet: $" << currentBet << std::endl;
+    std::cout << "\nPlayers:" << std::endl;
+    for (size_t i = 0; i < players.size(); i++) {
+        std::cout << "    "; // No dealer button for Stud
+        
+        // Show player info without cards
+        Player* player = players[i].get();
+        std::cout << std::setw(15) << player->getName()
+                  << " | Chips: " << std::setw(6) << player->getChips()
+                  << " | Bet: " << std::setw(4) << player->getInFor()
+                  << " | Cards: ";
+        
+        // Use Stud-specific hand display with new cards marked
+        player->showStudHandWithNew();
+        
+        if (player->hasFolded()) {
+            std::cout << " | FOLDED";
+        } else if (player->isAllIn()) {
+            std::cout << " | ALL-IN";
+        }
+        std::cout << std::endl;
     }
     std::cout << std::endl;
 }

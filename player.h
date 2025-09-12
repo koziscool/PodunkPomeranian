@@ -31,6 +31,7 @@ private:
     int chips;
     std::vector<Card> hand;
     std::vector<bool> cardsFaceUp; // Track which cards are face up (for stud games)
+    int cardsAtStartOfStreet; // Track how many cards player had at start of current street
     int currentBet;
     int inFor; // Chips committed to pot during current betting round
     bool folded;
@@ -60,8 +61,10 @@ public:
     void clearHand();
     void showHand() const;
     void showStudHand() const; // Show stud-style hand (face up/down)
+    void showStudHandWithNew() const; // Show stud hand with new cards marked
     std::vector<Card> getUpCards() const; // Get only face-up cards
     Card getLowestUpCard() const; // For bring-in determination
+    void markStartOfStreet(); // Mark current hand size for new card tracking
     
     // Chip management
     void addChips(int amount);

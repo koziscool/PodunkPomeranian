@@ -33,6 +33,7 @@ public:
     virtual void dealInitialCards();
     virtual void runBettingRounds();
     virtual void conductShowdown();
+    virtual void awardPotsWithoutShowdown();
     virtual bool atShowdown() const;
     
     // Structure-specific game flow methods
@@ -80,7 +81,7 @@ public:
     virtual void resetBettingRound();
     
     // Intelligent betting round completion using player AI
-    virtual void completeBettingRound(HandHistoryRound currentRound);
+    virtual void completeBettingRound(HandHistoryRound historyRound);
     
     // Utility functions for showdown (common operations)
     virtual std::vector<int> findBestHand(const std::vector<int>& eligiblePlayers); // Find winners among eligible players (virtual for variants)
@@ -93,6 +94,10 @@ public:
     std::vector<int> findHiLoWinners(const std::vector<int>& eligiblePlayers);
     void displayHiLoWinningHands(const std::vector<int>& winners, const std::vector<int>& eligiblePlayers) const;
     void transferHiLoPotsToWinners(int potAmount);
+    
+    // Stud-specific betting order methods
+    int findStudFirstToAct() const; // Find player who acts first based on up cards
+    bool determineBettorForStud(const std::vector<Card>& hand1, const std::vector<Card>& hand2) const; // Compare Stud up cards for betting order
     
     // Getters
     VariantInfo getVariantInfo() const { return variantInfo; }

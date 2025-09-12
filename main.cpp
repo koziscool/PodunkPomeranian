@@ -57,7 +57,7 @@ int main() {
     std::vector<int> startingChips = {1000, 1000, 1000, 1000, 1000, 1000};
     
     // Multi-hand simulation
-    const int NUM_HANDS = 50;
+    const int NUM_HANDS = 5;
     VariantInfo variantInfo = game->getVariantInfo();
     
     for (int handNum = 1; handNum <= NUM_HANDS; handNum++) {
@@ -85,14 +85,20 @@ int main() {
         // Start the hand
         game->startNewHand();
         
-        // Show initial state
-        game->showGameState();
+        // Show initial state (only for board games, Stud shows state with bring-in)
+        if (variantInfo.gameStruct != GAMESTRUCTURE_STUD) {
+            game->showGameState();
+        }
         
         // Run the game
         game->runBettingRounds();
         
-        // Conduct showdown if not already done
-        if (!game->isHandComplete()) {
+        // Award pot if hand is complete but showdown hasn't happened yet
+        if (game->isHandComplete() && !game->atShowdown()) {
+            // Everyone folded except one player - award pot without showdown
+            game->awardPotsWithoutShowdown();
+        } else if (!game->isHandComplete()) {
+            // This shouldn't happen, but just in case
             game->conductShowdown();
         }
         

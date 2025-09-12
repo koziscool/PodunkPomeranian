@@ -56,6 +56,7 @@ public:
     
     // Display
     void showTable() const;
+    void showTableForStud() const; // Stud-specific display
     
     // Dealer position
     int getDealerPosition() const;

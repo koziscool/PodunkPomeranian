@@ -119,6 +119,18 @@ void SidePotManager::addSidePot(int amount, int betLevel, const std::set<int>& e
     pots.back().eligiblePlayers = eligiblePlayers;
 }
 
+bool SidePotManager::addToExistingSidePot(int amount, const std::set<int>& eligiblePlayers) {
+    // Check if there's already a side pot for these players
+    for (size_t i = 1; i < pots.size(); i++) { // Skip main pot (index 0)
+        if (pots[i].eligiblePlayers == eligiblePlayers) {
+            // Found existing side pot with same eligible players - add to it
+            pots[i].amount += amount;
+            return true;
+        }
+    }
+    return false; // No existing side pot found
+}
+
 int SidePotManager::getTotalPotAmount() const {
     int total = 0;
     for (const auto& pot : pots) {

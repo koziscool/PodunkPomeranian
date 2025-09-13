@@ -303,8 +303,15 @@ void Table::createSidePotsFromInFor() {
                 sidePotManager.addToPot(potTotal, eligiblePlayers);
                 isFirstPot = false;
             } else {
-                // Additional pots become side pots
-                sidePotManager.addSidePot(potTotal, allInLevel, eligiblePlayers);
+                // For all-in situations, first all-in level should always be added to main pot
+                // Additional levels become side pots
+                if (previousLevel == 0) {
+                    // This is the first (lowest) all-in level - add to main pot
+                    sidePotManager.addToPot(potTotal, eligiblePlayers);
+                } else {
+                    // This is a higher all-in level - create side pot
+                    sidePotManager.addSidePot(potTotal, allInLevel, eligiblePlayers);
+                }
             }
         }
         
@@ -325,8 +332,11 @@ void Table::createSidePotsFromInFor() {
     }
     
     if (remainingTotal > 0 && remainingEligible.size() > 1) {
-        // Create final side pot for remaining active players
-        sidePotManager.addSidePot(remainingTotal, highestAllIn + 1, remainingEligible);
+        // Try to add to existing side pot first, if not possible create new one
+        if (!sidePotManager.addToExistingSidePot(remainingTotal, remainingEligible)) {
+            // Create new side pot for remaining active players
+            sidePotManager.addSidePot(remainingTotal, highestAllIn + 1, remainingEligible);
+        }
     }
 }
 

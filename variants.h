@@ -1,4 +1,7 @@
 
+#ifndef VARIANTS_H
+#define VARIANTS_H
+
 #include <string>
 #include <vector>
 
@@ -13,6 +16,11 @@ enum NumHoleCards
     NUMHOLECARDS_NULL,
     NUMHOLECARDS_TWO,
     NUMHOLECARDS_FOUR
+};
+
+enum MaxBetsForLimit
+{
+    MAXLIMITBETS_4
 };
 
 enum Breakage
@@ -87,10 +95,12 @@ namespace PokerVariants {
         "Omaha Hi-Lo",
         GAMESTRUCTURE_BOARD,
         NUMHOLECARDS_FOUR,
-        {10, 20}, // smallBlind, bigBlind
+        {10, 20, 20, 40}, // smallBlind, bigBlind, smallBet, bigBet
         BETTINGSTRUCTURE_LIMIT,
         BESTHANDRESOLUTION_TWOPLUSTHREE,
         POTRESOLUTION_HILO_A5_MUSTQUALIFY
     };
 }
+
+#endif
 

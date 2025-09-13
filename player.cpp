@@ -188,6 +188,10 @@ void Player::addToInFor(int amount) {
     inFor += amount;
 }
 
+void Player::setInFor(int amount) {
+    inFor = amount;
+}
+
 void Player::resetInFor() {
     inFor = 0;
 }
@@ -227,7 +231,13 @@ void Player::showStatus(bool showCards) const {
 }
 
 // Decision making implementation
-PlayerAction Player::makeDecision(const HandHistory& history, int callAmount, bool canCheck) const {
+PlayerAction Player::makeDecision(const HandHistory& history, int callAmount, bool canCheck, const VariantInfo* variant, int betCount) const {
+    // Check bet cap for limit games (4-bet cap)
+    bool canRaise = true;
+    if (variant && variant->bettingStruct == BETTINGSTRUCTURE_LIMIT && betCount >= 4) {
+        canRaise = false; // 4-bet cap reached
+    }
+    
     // If we can't afford the call amount, go all-in or fold
     if (callAmount >= chips) {
         if (chips <= 50) { // Small stack, might as well try
@@ -263,7 +273,7 @@ PlayerAction Player::makeDecision(const HandHistory& history, int callAmount, bo
                 personality == PlayerPersonality::LOOSE_AGGRESSIVE) {
                 
                 std::uniform_real_distribution<double> dist(0.0, 1.0);
-                if (dist(rng) < 0.8) { // 80% chance to raise with strong hand
+                if (dist(rng) < 0.8 && canRaise) { // 80% chance to raise with strong hand
                     return PlayerAction::RAISE;
                 }
             }
@@ -275,7 +285,7 @@ PlayerAction Player::makeDecision(const HandHistory& history, int callAmount, bo
             // Sometimes raise with medium-good hands
             if (personality == PlayerPersonality::LOOSE_AGGRESSIVE) {
                 std::uniform_real_distribution<double> dist(0.0, 1.0);
-                if (dist(rng) < 0.4 && callAmount == 0) { // 40% chance to bet when checking is free
+                if (dist(rng) < 0.4 && callAmount == 0 && canRaise) { // 40% chance to bet when checking is free
                     return PlayerAction::RAISE;
                 }
             }
@@ -301,12 +311,39 @@ PlayerAction Player::makeDecision(const HandHistory& history, int callAmount, bo
         return PlayerAction::FOLD;
     }
     
-    // Very strong hands - bet/raise aggressively
-    if (handStrength > 0.8) {
+    // Check if we're on turn/river for more aggressive play
+    bool isLateStreet = (history.getCurrentRound() == HandHistoryRound::TURN || 
+                        history.getCurrentRound() == HandHistoryRound::RIVER);
+    
+    // SUPER AGGRESSIVE on turn/river for testing limit betting structure
+    if (isLateStreet && variant && variant->variantName == "Omaha Hi-Lo") {
+        // On turn/river in Omaha, make everyone extremely aggressive
+        if (handStrength > 0.4) { // Much lower threshold
+            std::uniform_real_distribution<double> dist(0.0, 1.0);
+            if (dist(rng) < 0.98 && canRaise) { // 98% chance to raise!
+                return PlayerAction::RAISE;
+            }
+            return callAmount > 0 ? PlayerAction::CALL : PlayerAction::CHECK;
+        }
+        // Even mediocre hands will often bet/call on turn/river
+        if (handStrength > 0.25) {
+            std::uniform_real_distribution<double> dist(0.0, 1.0);
+            if (callAmount == 0 && dist(rng) < 0.95 && canRaise) {
+                return PlayerAction::RAISE; // 95% chance to bet
+            }
+            if (callAmount > 0 && dist(rng) < 0.90) {
+                return PlayerAction::CALL; // 90% chance to call
+            }
+        }
+    }
+    
+    // Very strong hands - bet/raise aggressively  
+    if (handStrength > 0.7) {
         if (personality == PlayerPersonality::TIGHT_AGGRESSIVE || 
             personality == PlayerPersonality::LOOSE_AGGRESSIVE) {
             std::uniform_real_distribution<double> dist(0.0, 1.0);
-            if (dist(rng) < 0.7) { // 70% chance to raise
+            double raiseChance = isLateStreet ? 0.95 : 0.85; // Much more aggressive
+            if (dist(rng) < raiseChance && canRaise) {
                 return PlayerAction::RAISE;
             }
         }
@@ -314,14 +351,33 @@ PlayerAction Player::makeDecision(const HandHistory& history, int callAmount, bo
     }
     
     // Good hands - value bet or call
-    if (handStrength > 0.6) {
-        if (callAmount == 0 && personality == PlayerPersonality::LOOSE_AGGRESSIVE) {
+    if (handStrength > 0.5) {
+        if (callAmount == 0) {
             std::uniform_real_distribution<double> dist(0.0, 1.0);
-            if (dist(rng) < 0.5) { // 50% chance to bet for value
+            double betChance = isLateStreet ? 0.9 : 0.7; // Much more aggressive on turn/river
+            if (dist(rng) < betChance && canRaise) {
                 return PlayerAction::RAISE;
             }
         }
         return callAmount > 0 ? PlayerAction::CALL : PlayerAction::CHECK;
+    }
+    
+    // Special case for Omaha turn/river - make weaker hands call more often
+    if (isLateStreet && variant && variant->variantName == "Omaha Hi-Lo") {
+        // Even weak hands will call on turn/river in Omaha (for testing)
+        if (handStrength > 0.15 && callAmount > 0) {
+            std::uniform_real_distribution<double> dist(0.0, 1.0);
+            if (dist(rng) < 0.85) { // 85% chance to call even with weak hands
+                return PlayerAction::CALL;
+            }
+        }
+        // Bluff very often on turn/river
+        if (callAmount == 0 && canRaise) {
+            std::uniform_real_distribution<double> dist(0.0, 1.0);
+            if (dist(rng) < 0.80) { // 80% chance to bluff bet
+                return PlayerAction::RAISE;
+            }
+        }
     }
     
     // Medium hands 
@@ -329,9 +385,13 @@ PlayerAction Player::makeDecision(const HandHistory& history, int callAmount, bo
         return callAmount > 0 ? PlayerAction::CALL : PlayerAction::CHECK;
     }
     
-    // Bluff occasionally with weak hands
-    if (callAmount == 0 && shouldBluff(history)) {
-        return PlayerAction::RAISE;
+    // Bluff occasionally with weak hands (more on turn/river)
+    if (callAmount == 0 && canRaise) {
+        std::uniform_real_distribution<double> dist(0.0, 1.0);
+        double bluffChance = isLateStreet ? 0.3 : 0.1; // Much more bluffing on turn/river
+        if (dist(rng) < bluffChance) {
+            return PlayerAction::RAISE;
+        }
     }
     
     if (canCheck) {
@@ -341,7 +401,7 @@ PlayerAction Player::makeDecision(const HandHistory& history, int callAmount, bo
     return PlayerAction::FOLD;
 }
 
-int Player::calculateRaiseAmount(const HandHistory& /* history */, int currentBet, const VariantInfo& variant) const {
+int Player::calculateRaiseAmount(const HandHistory& /* history */, int currentBet, const VariantInfo& variant, UnifiedBettingRound currentRound) const {
     if (variant.bettingStruct == BETTINGSTRUCTURE_LIMIT) {
         // Limit poker logic
         if (variant.gameStruct == GAMESTRUCTURE_STUD) {
@@ -353,24 +413,24 @@ int Player::calculateRaiseAmount(const HandHistory& /* history */, int currentBe
             if (currentBet == bringIn) {
                 // Complete bring-in to small bet
                 return smallBet;
-            } else if (currentBet == smallBet || currentBet == 0) {
-                // Small bet round: raise by small bet increment
+            } else if (currentRound == UNIFIED_PRE_FLOP || currentRound == UNIFIED_FLOP) {
+                // 3rd and 4th street: small bet rounds
                 return currentBet + smallBet;
             } else {
-                // Big bet round: raise by big bet increment
+                // 5th street and beyond: big bet rounds
                 return currentBet + bigBet;
             }
         } else {
             // Board games (Hold'em, Omaha) limit logic
-            int bigBlind = variant.betSizes[1];
+            int smallBet = variant.betSizes[2];
+            int bigBet = variant.betSizes[3];
             
-            // In limit Hold'em/Omaha: small bet = big blind, big bet = 2 * big blind
-            if (currentBet <= bigBlind) {
-                // Small bet round: raise by small bet (= big blind)
-                return currentBet + bigBlind;
+            if (currentRound == UNIFIED_PRE_FLOP || currentRound == UNIFIED_FLOP) {
+                // Pre-flop and flop: small bet rounds
+                return currentBet + smallBet;
             } else {
-                // Big bet round: raise by big bet (= 2 * big blind)
-                return currentBet + (bigBlind * 2);
+                // Turn and river: big bet rounds
+                return currentBet + bigBet;
             }
         }
     } else {

@@ -7,7 +7,7 @@
 PokerGame::PokerGame(Table* gameTable, const VariantInfo& variant)
     : table(gameTable), variantInfo(variant), currentPlayerIndex(0), handComplete(false), 
       currentHandHasChoppedPot(false), handHistory(PokerVariant::TEXAS_HOLDEM, 1), 
-      currentRound(UNIFIED_PRE_FLOP) {
+      currentRound(UNIFIED_PRE_FLOP), betCount(0), currentActionPotIndex(0) {
     // TODO: HandHistory needs to be updated to use VariantInfo instead of PokerVariant
 }
 
@@ -26,7 +26,149 @@ std::vector<int> PokerGame::findWinners(const std::vector<int>& eligiblePlayers)
 
 // Common pot mechanics (same across all poker variants)
 void PokerGame::collectBetsToInFor() {
-    table->collectBets();
+    std::cout << "DEBUG: Starting collectBetsToInFor() - current action pot index: " << currentActionPotIndex << std::endl;
+    
+    // Show all player inFor amounts before processing
+    for (int i = 0; i < table->getPlayerCount(); i++) {
+        Player* player = table->getPlayer(i);
+        if (player) {
+            std::cout << "DEBUG: " << player->getName() << " has inFor: $" << player->getInFor() 
+                     << " (folded: " << (player->hasFolded() ? "yes" : "no") 
+                     << ", allIn: " << (player->isAllIn() ? "yes" : "no") << ")" << std::endl;
+        }
+    }
+    
+    // Check if anyone went all-in this round
+    bool anyoneAllIn = false;
+    for (int i = 0; i < table->getPlayerCount(); i++) {
+        Player* player = table->getPlayer(i);
+        if (player && player->isAllIn()) {
+            anyoneAllIn = true;
+            break;
+        }
+    }
+    
+    if (!anyoneAllIn) {
+        // Simple case: no all-ins, just collect all money to current action pot
+        int totalAmount = 0;
+        std::set<int> eligiblePlayers;
+        
+        for (int i = 0; i < table->getPlayerCount(); i++) {
+            Player* player = table->getPlayer(i);
+            if (player && player->getInFor() > 0) {
+                totalAmount += player->getInFor();
+                if (!player->hasFolded()) {
+                    eligiblePlayers.insert(i);
+                }
+            }
+        }
+        
+        if (totalAmount > 0) {
+            std::cout << "DEBUG: No all-ins, adding $" << totalAmount << " to current action pot " << currentActionPotIndex << std::endl;
+            
+            if (currentActionPotIndex == 0) {
+                table->getSidePotManager().addToMainPot(totalAmount);
+                table->getSidePotManager().addEligiblePlayersToMainPot(eligiblePlayers);
+            } else {
+                table->getSidePotManager().addSidePot(totalAmount, currentActionPotIndex, eligiblePlayers);
+            }
+        }
+    } else {
+        // Complex case: handle all-in side pots (we'll implement this properly later)
+        std::cout << "DEBUG: All-in detected, complex side pot logic needed" << std::endl;
+        // For now, just collect everything to main pot - we'll fix this later
+        int totalAmount = 0;
+        std::set<int> eligiblePlayers;
+        
+        for (int i = 0; i < table->getPlayerCount(); i++) {
+            Player* player = table->getPlayer(i);
+            if (player && player->getInFor() > 0) {
+                totalAmount += player->getInFor();
+                if (!player->hasFolded()) {
+                    eligiblePlayers.insert(i);
+                }
+            }
+        }
+        
+        if (totalAmount > 0) {
+            table->getSidePotManager().addToMainPot(totalAmount);
+            table->getSidePotManager().addEligiblePlayersToMainPot(eligiblePlayers);
+        }
+    }
+    
+    // Reset player bets and inFor
+    for (int i = 0; i < table->getPlayerCount(); i++) {
+        Player* player = table->getPlayer(i);
+        if (player) {
+            player->resetBet();
+            player->resetInFor();
+        }
+    }
+    table->setCurrentBet(0);
+}
+
+void PokerGame::handleAllInSidePots(int allInPlayerIndex) {
+    Player* allInPlayer = table->getPlayer(allInPlayerIndex);
+    if (!allInPlayer) return;
+    
+    int allInAmount = allInPlayer->getInFor();
+    std::cout << "DEBUG: All-in amount = $" << allInAmount << std::endl;
+    
+    // Collect matching amounts from ALL active players for current action pot
+    int potTotal = 0;
+    std::set<int> eligiblePlayers;
+    
+    for (int i = 0; i < table->getPlayerCount(); i++) {
+        Player* player = table->getPlayer(i);
+        if (player && !player->hasFolded()) {
+            // Every active player must match the all-in amount (up to what they have)
+            int matchAmount = std::min(player->getInFor(), allInAmount);
+            if (matchAmount > 0) {
+                potTotal += matchAmount;
+                std::cout << "DEBUG: Player " << player->getName() << " matches $" << matchAmount 
+                         << " (had $" << player->getInFor() << ")" << std::endl;
+                
+                // Set player's inFor to remaining amount after match
+                player->setInFor(player->getInFor() - matchAmount);
+            } else {
+                std::cout << "DEBUG: Player " << player->getName() << " has no inFor to match" << std::endl;
+            }
+            
+            // All active players are eligible for this pot
+            eligiblePlayers.insert(i);
+        }
+    }
+    
+    // Add matched amount to current action pot
+    if (potTotal > 0) {
+        std::cout << "DEBUG: Adding $" << potTotal << " to current action pot " << currentActionPotIndex << std::endl;
+        if (currentActionPotIndex == 0) {
+            // Adding to main pot
+            table->getSidePotManager().addToMainPot(potTotal);
+            table->getSidePotManager().addEligiblePlayersToMainPot(eligiblePlayers);
+        } else {
+            // Adding to existing side pot
+            table->getSidePotManager().addToExistingSidePot(potTotal, eligiblePlayers);
+        }
+    }
+    
+    // Check if any players still have money left - if so, create new side pot
+    bool hasRemainingMoney = false;
+    std::set<int> remainingEligible;
+    
+    for (int i = 0; i < table->getPlayerCount(); i++) {
+        Player* player = table->getPlayer(i);
+        if (player && player->getInFor() > 0 && !player->hasFolded()) {
+            hasRemainingMoney = true;
+            remainingEligible.insert(i);
+        }
+    }
+    
+    if (hasRemainingMoney && remainingEligible.size() > 1) {
+        // Create new side pot and make it the current action pot
+        currentActionPotIndex++;
+        // The side pot will be created when we next call collectBetsToInFor()
+    }
 }
 
 bool PokerGame::hasSidePots() const {
@@ -368,12 +510,13 @@ bool PokerGame::isBettingComplete() const {
     for (int i = 0; i < table->getPlayerCount(); i++) {
         Player* player = table->getPlayer(i);
         if (player && !player->hasFolded() && !player->isAllIn()) {
-            // If player hasn't acted this round, betting isn't complete
-            if (!hasActedThisRound[i]) {
-                return false;
-            }
             // If player's inFor amount doesn't match current bet, betting isn't complete
             if (player->getInFor() < currentBet) {
+                return false;
+            }
+            // If player hasn't acted this round, betting isn't complete
+            // BUT: if player owes money, they MUST act regardless of hasActedThisRound
+            if (!hasActedThisRound[i] && player->getInFor() >= currentBet) {
                 return false;
             }
         }
@@ -427,6 +570,7 @@ bool PokerGame::canPlayerAct(int playerIndex) const {
 
 void PokerGame::resetBettingRound() {
     hasActedThisRound.assign(table->getPlayerCount(), false);
+    betCount = 0;
 }
 
 void PokerGame::completeBettingRound(HandHistoryRound historyRound) {
@@ -434,7 +578,7 @@ void PokerGame::completeBettingRound(HandHistoryRound historyRound) {
     resetBettingRound();
     
     int actionCount = 0;
-    const int MAX_ACTIONS = 10; // Reduced safety limit
+    const int MAX_ACTIONS = 150; // Allow for multiple raises with many players
     
     // Special handling for Stud third street - show bring-in as first action
     if (variantInfo.gameStruct == GAMESTRUCTURE_STUD && historyRound == HandHistoryRound::PRE_FLOP) {
@@ -476,7 +620,7 @@ void PokerGame::completeBettingRound(HandHistoryRound historyRound) {
         int callAmount = currentBet - player->getInFor();
         bool canCheck = (callAmount <= 0);
         
-        PlayerAction decision = player->makeDecision(handHistory, callAmount, canCheck);
+        PlayerAction decision = player->makeDecision(handHistory, callAmount, canCheck, &variantInfo, betCount);
         
         // Execute the player's decision
         std::string actionDesc;
@@ -494,18 +638,33 @@ void PokerGame::completeBettingRound(HandHistoryRound historyRound) {
                 actionDesc = "calls $" + std::to_string(player->getInFor());
                 break;
             case PlayerAction::RAISE: {
-                int raiseAmount = player->calculateRaiseAmount(handHistory, currentBet, variantInfo);
+                int raiseAmount = player->calculateRaiseAmount(handHistory, currentBet, variantInfo, currentRound);
                 playerRaise(playerIndex, raiseAmount);
                 if (currentBet == 0) {
                     actionDesc = "bets $" + std::to_string(raiseAmount);
                 } else {
                     actionDesc = "raises to $" + std::to_string(raiseAmount);
                 }
+                // Increment bet count for limit games
+                if (variantInfo.bettingStruct == BETTINGSTRUCTURE_LIMIT) {
+                    betCount++;
+                }
+                
+                // When someone raises, players who now owe money need to act again
+                int newCurrentBet = table->getCurrentBet();
+                for (int i = 0; i < table->getPlayerCount(); i++) {
+                    Player* otherPlayer = table->getPlayer(i);
+                    if (otherPlayer && !otherPlayer->hasFolded() && !otherPlayer->isAllIn() && 
+                        i != playerIndex && otherPlayer->getInFor() < newCurrentBet) {
+                        hasActedThisRound[i] = false; // They need to act again
+                    }
+                }
                 break;
             }
             case PlayerAction::ALL_IN:
                 playerAllIn(playerIndex);
                 actionDesc = "goes all-in for $" + std::to_string(player->getInFor());
+                std::cout << "DEBUG: " << player->getName() << " went all-in for $" << player->getInFor() << std::endl;
                 break;
         }
         
@@ -515,7 +674,7 @@ void PokerGame::completeBettingRound(HandHistoryRound historyRound) {
         // Record the action in hand history
         recordPlayerAction(historyRound, player->getPlayerId(), 
                           static_cast<ActionType>(decision), 
-                          (decision == PlayerAction::RAISE) ? player->calculateRaiseAmount(handHistory, currentBet, variantInfo) : callAmount,
+                          (decision == PlayerAction::RAISE) ? player->calculateRaiseAmount(handHistory, currentBet, variantInfo, currentRound) : callAmount,
                           actionDesc);
         
         // Mark player as having acted
@@ -548,6 +707,7 @@ void PokerGame::startNewHand() {
     handComplete = false;
     currentHandHasChoppedPot = false;
     hasActedThisRound.assign(table->getPlayerCount(), false);
+    currentActionPotIndex = 0; // All money goes to main pot initially
     
     // Initialize hand history
     initializeHandHistory(1);
@@ -977,15 +1137,17 @@ void PokerGame::nextRound() {
 void PokerGame::conductShowdown() {
     std::cout << "\n=== SHOWDOWN ===" << std::endl;
     
-    // Show all players' cards
-    for (int i = 0; i < table->getPlayerCount(); i++) {
-        Player* player = table->getPlayer(i);
-        if (player && !player->hasFolded()) {
-            std::cout << player->getName() << " hole cards: ";
-            for (const auto& card : player->getHand()) {
-                std::cout << card.toString() << " ";
+    // Show all players' cards (for board games only - Stud cards are already visible)
+    if (variantInfo.gameStruct == GAMESTRUCTURE_BOARD) {
+        for (int i = 0; i < table->getPlayerCount(); i++) {
+            Player* player = table->getPlayer(i);
+            if (player && !player->hasFolded()) {
+                std::cout << player->getName() << " hole cards: ";
+                for (const auto& card : player->getHand()) {
+                    std::cout << card.toString() << " ";
+                }
+                std::cout << std::endl;
             }
-            std::cout << std::endl;
         }
     }
     

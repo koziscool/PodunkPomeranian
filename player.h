@@ -2,6 +2,7 @@
 #define PLAYER_H
 
 #include "card.h"
+#include "variants.h"
 #include <vector>
 #include <string>
 #include <iomanip>
@@ -79,13 +80,14 @@ public:
     PlayerAction goAllIn();
     
     // Decision making - the main interface for AI players
-    PlayerAction makeDecision(const HandHistory& history, int callAmount, bool canCheck = false) const;
-    int calculateRaiseAmount(const HandHistory& history, int currentBet, const VariantInfo& variant) const;
+    PlayerAction makeDecision(const HandHistory& history, int callAmount, bool canCheck = false, const VariantInfo* variant = nullptr, int betCount = 0) const;
+    int calculateRaiseAmount(const HandHistory& history, int currentBet, const VariantInfo& variant, UnifiedBettingRound currentRound) const;
     
     // Game state management
     void resetBet();
     void setBet(int amount);
     void addToInFor(int amount); // Add chips to inFor (deducted from stack)
+    void setInFor(int amount); // Set inFor to specific amount (for side pot calculation)
     void resetInFor(); // Reset inFor to 0 at end of betting round
     void resetForNewHand();
     void showStatus(bool showCards = false) const;

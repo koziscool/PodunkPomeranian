@@ -19,6 +19,8 @@ protected:
     HandHistory handHistory;
     std::vector<bool> hasActedThisRound;
     UnifiedBettingRound currentRound;
+    int betCount; // Track number of bets in current round for limit games
+    int currentActionPotIndex; // Index of the pot that receives new money (0=main, 1=side1, etc.)
     
     // Hi-Lo specific winner tracking
     std::vector<int> hiWinners;
@@ -59,6 +61,7 @@ public:
     
     // Common pot mechanics (same across all poker variants)
     virtual void collectBetsToInFor(); // Collect inFor amounts to pots at end of betting round
+    virtual void handleAllInSidePots(int allInPlayerIndex); // Handle side pot creation when player goes all-in
     virtual bool hasSidePots() const;
     virtual bool hasChoppedPots() const;
     virtual bool isInterestingHand() const;

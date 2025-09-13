@@ -24,6 +24,7 @@ public:
     void addToMainPot(int amount);
     void addEligiblePlayersToMainPot(const std::set<int>& players); // Add eligible players to main pot
     void addSidePot(int amount, int betLevel, const std::set<int>& eligiblePlayers); // Add a new side pot
+    bool addToExistingSidePot(int amount, const std::set<int>& eligiblePlayers); // Add to existing side pot if found
     
     int getTotalPotAmount() const;
     int getMainPotAmount() const;
